@@ -1,0 +1,27 @@
+# Kiro IDE
+.kiro/
+
+# OS Files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor Files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Temporary Files
+*.tmp
+*.bak
+*.log
+
+# WoW Addon Development
+*.zip
+*.rar
+*.7z
+
+# Documentation artifacts (optional - remove if you want to track these)
+INTEGRATION_COMPLETE.md
