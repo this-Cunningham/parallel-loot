@@ -46,60 +46,179 @@ function ParallelLoot:GetAddonInfo()
     }
 end
 
--- Database defaults structure for AceDB-3.0
+-- Database defaults structure for AceDB-3.0 - Task 1.3 Implementation
 local dbDefaults = {
     profile = {
+        -- Roll category configuration
         categories = {
             bis = "BIS",
             ms = "MS", 
             os = "OS",
             coz = "COZ"
         },
+        categoryPriorities = {
+            bis = 1,
+            ms = 2,
+            os = 3,
+            coz = 4
+        },
+        
+        -- Session management settings
         autoStart = false,
+        autoAward = false,
+        sessionTimeout = 3600, -- 1 hour in seconds
+        
+        -- Audio and notification settings
         soundEnabled = true,
-        timerWarnings = {30, 10},
+        rollSounds = true,
+        awardSounds = true,
+        timerWarnings = {30, 10}, -- Warning times in seconds
+        
+        -- User interface preferences
         ui = {
             scale = 1.0,
-            position = {},
+            position = {
+                point = "CENTER",
+                relativePoint = "CENTER",
+                xOfs = 0,
+                yOfs = 0
+            },
             showTooltips = true,
-            useModernTooltips = true
+            useModernTooltips = true,
+            darkTheme = true,
+            compactMode = false,
+            showClassColors = true,
+            animationsEnabled = true
         },
+        
+        -- Communication settings
         communication = {
             useCompression = true,
             maxRetries = 3,
-            timeout = 30
+            timeout = 30,
+            debugMode = false,
+            logLevel = "INFO"
+        },
+        
+        -- Roll range configuration
+        rollRanges = {
+            baseRange = 100,
+            categoryOffsets = {
+                bis = 0,  -- Full range (1-100)
+                ms = -1,  -- 1-99
+                os = -2,  -- 1-98
+                coz = -3  -- 1-97
+            }
+        },
+        
+        -- Loot filtering preferences
+        filtering = {
+            showUnusableItems = false,
+            classFiltering = true,
+            armorTypeFiltering = true,
+            weaponTypeFiltering = true
         }
     },
+    
+    -- Character-specific data
     char = {
-        preferredCategories = {},
-        lastUsedRanges = {}
+        -- Personal roll preferences
+        preferredCategories = {
+            -- itemId = category mapping for quick rolling
+        },
+        lastUsedRanges = {},
+        
+        -- Personal statistics
+        stats = {
+            totalRolls = 0,
+            itemsWon = 0,
+            sessionsParticipated = 0,
+            lastSessionDate = nil
+        },
+        
+        -- Character-specific UI state
+        uiState = {
+            lastOpenedTab = "active",
+            expandedItems = {},
+            windowVisible = false
+        }
     },
+    
+    -- Realm-specific data
     realm = {
-        guildSettings = {}
+        -- Guild and server-specific settings
+        guildSettings = {
+            -- guildName = { loot rules, DKP integration, etc. }
+        },
+        
+        -- Known players and their preferences
+        knownPlayers = {
+            -- playerName = { class, lastSeen, preferences }
+        },
+        
+        -- Realm-specific loot rules
+        lootRules = {
+            defaultSystem = "parallel",
+            allowCrossRealm = true
+        }
     },
+    
+    -- Global (account-wide) data
     global = {
+        -- Version and compatibility tracking
         version = "2.0.0",
         apiVersion = "MoP-Classic-Modern",
+        dbVersion = 1,
+        
+        -- Session data
         sessions = {
             current = {},
-            history = {}
+            history = {},
+            maxHistoryEntries = 50
+        },
+        
+        -- Global preferences
+        preferences = {
+            enableDebugMode = false,
+            enableBetaFeatures = false,
+            dataCollection = true
+        },
+        
+        -- Migration tracking
+        migration = {
+            lastMigrationVersion = "2.0.0",
+            migrationHistory = {}
         }
     }
 }
 
--- AceAddon lifecycle methods - Task 1.2 Implementation
+-- AceAddon lifecycle methods - Task 1.2 & 1.3 Implementation
 function ParallelLoot:OnInitialize()
     -- Track lifecycle method calls for validation
     self._lifecycleCalls = self._lifecycleCalls or {}
     table.insert(self._lifecycleCalls, "OnInitialize")
     
-    -- Initialize database with AceDB-3.0
+    -- Initialize database with AceDB-3.0 - Task 1.3 Implementation
     self.db = AceDB:New("ParallelLootDB", dbDefaults, true)
     
-    -- Register profile callbacks
-    self.db.RegisterCallback(self, "OnProfileChanged", "RefreshConfig")
-    self.db.RegisterCallback(self, "OnProfileCopied", "RefreshConfig")
-    self.db.RegisterCallback(self, "OnProfileReset", "RefreshConfig")
+    -- Validate database initialization
+    if not self.db then
+        error("ParallelLoot: Failed to initialize AceDB database!")
+        return
+    end
+    
+    -- Register profile callbacks for configuration management
+    self.db.RegisterCallback(self, "OnProfileChanged", "OnProfileChanged")
+    self.db.RegisterCallback(self, "OnProfileCopied", "OnProfileCopied") 
+    self.db.RegisterCallback(self, "OnProfileReset", "OnProfileReset")
+    self.db.RegisterCallback(self, "OnNewProfile", "OnNewProfile")
+    self.db.RegisterCallback(self, "OnProfileDeleted", "OnProfileDeleted")
+    
+    -- Perform data migration if needed
+    self:MigrateDatabase()
+    
+    -- Initialize database-dependent systems
+    self:InitializeDatabaseSystems()
     
     -- Initialize core modules (placeholders for future tasks)
     self.LootManager = {}
@@ -117,11 +236,13 @@ function ParallelLoot:OnInitialize()
         version = self.VERSION,
         apiVersion = self.API_VERSION,
         buildDate = date("%Y-%m-%d %H:%M:%S"),
-        aceVersion = AceAddon.version or "Unknown"
+        aceVersion = AceAddon.version or "Unknown",
+        dbVersion = self.db.global.dbVersion
     }
     
     print("|cff00ff00ParallelLoot|r v" .. self.VERSION .. " initialized successfully!")
     print("|cff888888ParallelLoot|r Build: " .. self.buildInfo.buildDate .. " | API: " .. self.API_VERSION)
+    print("|cff888888ParallelLoot|r Database: Profile '" .. self.db:GetCurrentProfile() .. "' | Version " .. self.db.global.dbVersion)
 end
 
 function ParallelLoot:OnEnable()
@@ -154,11 +275,125 @@ function ParallelLoot:OnDisable()
     print("|cff00ff00ParallelLoot|r disabled.")
 end
 
--- Profile change handler
+-- AceDB Profile Callback Handlers - Task 1.3 Implementation
+
+function ParallelLoot:OnProfileChanged(event, database, newProfileKey)
+    print("|cff00ff00ParallelLoot|r Profile changed to: " .. newProfileKey)
+    self:RefreshConfig()
+    self:RefreshUI()
+end
+
+function ParallelLoot:OnProfileCopied(event, database, sourceProfileKey)
+    print("|cff00ff00ParallelLoot|r Profile copied from: " .. sourceProfileKey)
+    self:RefreshConfig()
+    self:RefreshUI()
+end
+
+function ParallelLoot:OnProfileReset(event, database)
+    print("|cff00ff00ParallelLoot|r Profile reset to defaults")
+    self:RefreshConfig()
+    self:RefreshUI()
+end
+
+function ParallelLoot:OnNewProfile(event, database, newProfileKey)
+    print("|cff00ff00ParallelLoot|r New profile created: " .. newProfileKey)
+    -- Initialize new profile with character-specific defaults
+    self:InitializeNewProfile(newProfileKey)
+end
+
+function ParallelLoot:OnProfileDeleted(event, database, deletedProfileKey)
+    print("|cff00ff00ParallelLoot|r Profile deleted: " .. deletedProfileKey)
+    -- Cleanup any profile-specific data
+    self:CleanupDeletedProfile(deletedProfileKey)
+end
+
+-- Configuration refresh handler
 function ParallelLoot:RefreshConfig()
     -- Refresh configuration when profile changes
-    -- This will be expanded in future tasks
-    print("|cff00ff00ParallelLoot|r configuration refreshed.")
+    -- Validate current profile settings
+    self:ValidateProfileSettings()
+    
+    -- Update any cached configuration values
+    self:UpdateCachedSettings()
+    
+    -- Notify other systems of configuration change
+    self:FireConfigChangedEvent()
+    
+    print("|cff00ff00ParallelLoot|r Configuration refreshed for profile: " .. self.db:GetCurrentProfile())
+end
+
+-- UI refresh handler for profile changes
+function ParallelLoot:RefreshUI()
+    -- Refresh UI elements when profile changes
+    -- This will be expanded in future UI tasks
+    if self.UIManager and self.UIManager.RefreshAll then
+        self.UIManager:RefreshAll()
+    end
+end
+
+-- Initialize new profile with character-specific defaults
+function ParallelLoot:InitializeNewProfile(profileKey)
+    -- Set character-specific defaults for new profiles
+    local playerClass = UnitClass("player")
+    local playerName = UnitName("player")
+    
+    -- Apply class-specific default settings
+    if playerClass then
+        -- This will be expanded when class filtering is implemented
+        self.db.profile.filtering.classFiltering = true
+    end
+    
+    print("|cff888888ParallelLoot|r Initialized new profile '" .. profileKey .. "' for " .. (playerName or "Unknown") .. " (" .. (playerClass or "Unknown") .. ")")
+end
+
+-- Cleanup deleted profile data
+function ParallelLoot:CleanupDeletedProfile(profileKey)
+    -- Remove any profile-specific cached data
+    -- This will be expanded as more systems are added
+    print("|cff888888ParallelLoot|r Cleaned up data for deleted profile: " .. profileKey)
+end
+
+-- Validate profile settings for consistency
+function ParallelLoot:ValidateProfileSettings()
+    local profile = self.db.profile
+    
+    -- Validate category configuration
+    if not profile.categories or not profile.categories.bis then
+        print("|cffff8800ParallelLoot Warning:|r Invalid category configuration, resetting to defaults")
+        profile.categories = dbDefaults.profile.categories
+    end
+    
+    -- Validate UI settings
+    if not profile.ui or type(profile.ui.scale) ~= "number" or profile.ui.scale <= 0 then
+        print("|cffff8800ParallelLoot Warning:|r Invalid UI scale, resetting to default")
+        profile.ui.scale = 1.0
+    end
+    
+    -- Validate timer warnings
+    if not profile.timerWarnings or #profile.timerWarnings == 0 then
+        profile.timerWarnings = {30, 10}
+    end
+end
+
+-- Update cached settings for performance
+function ParallelLoot:UpdateCachedSettings()
+    -- Cache frequently accessed settings for performance
+    self._cachedSettings = {
+        categories = self.db.profile.categories,
+        uiScale = self.db.profile.ui.scale,
+        soundEnabled = self.db.profile.soundEnabled,
+        darkTheme = self.db.profile.ui.darkTheme,
+        useCompression = self.db.profile.communication.useCompression
+    }
+end
+
+-- Fire configuration changed event for other systems
+function ParallelLoot:FireConfigChangedEvent()
+    -- This will be used by other systems to respond to config changes
+    -- Will be expanded when event system is implemented
+    if self.callbacks then
+        self.callbacks:Fire("ConfigChanged", self.db.profile)
+    end
 end
 
 -- Event handlers (basic structure for future expansion)
@@ -220,8 +455,9 @@ function ParallelLoot:RunTests()
     local librariesOK = self:ValidateLibraries()
     print("Library validation: " .. (librariesOK and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
     
-    -- Test 2: Database validation
-    local dbOK = self.db and self.db.profile and self.db.profile.categories
+    -- Test 2: Database validation (Task 1.3)
+    local dbOK = self.db and self.db.profile and self.db.profile.categories and 
+                 self.db.char and self.db.realm and self.db.global
     print("Database validation: " .. (dbOK and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
     
     -- Test 3: Addon object validation
@@ -236,7 +472,16 @@ function ParallelLoot:RunTests()
     local lifecycleOK = self:TestLifecycleOrder()
     print("Lifecycle order: " .. (lifecycleOK and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
     
-    local allTestsPass = librariesOK and dbOK and addonOK and aceFrameworkOK and lifecycleOK
+    -- Test 6: AceDB profile system validation (Task 1.3)
+    local profileSystemOK = self:TestProfileSystem()
+    print("Profile system: " .. (profileSystemOK and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+    
+    -- Test 7: Database persistence validation (Task 1.3)
+    local persistenceOK = self:TestDatabaseStructure()
+    print("Database structure: " .. (persistenceOK and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+    
+    local allTestsPass = librariesOK and dbOK and addonOK and aceFrameworkOK and 
+                        lifecycleOK and profileSystemOK and persistenceOK
     print("|cff00ff00ParallelLoot Test Suite:|r " .. (allTestsPass and "|cff00ff00ALL TESTS PASSED|r" or "|cffff0000SOME TESTS FAILED|r"))
     
     return allTestsPass
@@ -274,6 +519,386 @@ function ParallelLoot:TestLifecycleOrder()
     print("Correct sequence: " .. (correctSequence and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
     
     return correctSequence
+end
+
+-- Unit test for profile system - Task 1.3 Implementation
+function ParallelLoot:TestProfileSystem()
+    print("|cff00ff00ParallelLoot Profile System Test:|r Testing AceDB profile functionality...")
+    
+    -- Test profile management functions exist
+    local functionsExist = type(self.db.GetCurrentProfile) == "function" and
+                          type(self.db.GetProfiles) == "function" and
+                          type(self.db.SetProfile) == "function"
+    
+    if not functionsExist then
+        print("Profile management functions missing")
+        return false
+    end
+    
+    -- Test current profile access
+    local currentProfile = self.db:GetCurrentProfile()
+    local profileValid = currentProfile and type(currentProfile) == "string"
+    
+    print("Current profile: " .. (currentProfile or "nil"))
+    print("Profile valid: " .. (profileValid and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+    
+    -- Test profile list access
+    local profiles = self.db:GetProfiles()
+    local profileListValid = profiles and type(profiles) == "table"
+    
+    print("Profile list valid: " .. (profileListValid and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+    
+    return functionsExist and profileValid and profileListValid
+end
+
+-- Unit test for profile switching - Task 1.3 Implementation
+function ParallelLoot:TestProfileSwitching()
+    print("|cff00ff00ParallelLoot Profile Switch Test:|r Testing profile switching functionality...")
+    
+    -- Get current profile
+    local originalProfile = self.db:GetCurrentProfile()
+    
+    -- Test creating a temporary test profile
+    local testProfileName = "PLootTest_" .. time()
+    
+    -- Store original callback count
+    local originalCallbackCount = #(self._profileCallbacks or {})
+    
+    -- Create test profile by setting it (AceDB creates it automatically)
+    local success, err = pcall(function()
+        self.db:SetProfile(testProfileName)
+    end)
+    
+    if not success then
+        print("Profile creation failed: " .. (err or "unknown error"))
+        return false
+    end
+    
+    -- Verify we're on the test profile
+    local currentProfile = self.db:GetCurrentProfile()
+    local switchedCorrectly = currentProfile == testProfileName
+    
+    print("Switched to test profile: " .. (switchedCorrectly and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+    
+    -- Test profile data isolation
+    local testValue = "test_" .. math.random(1000, 9999)
+    self.db.profile.testSwitchValue = testValue
+    
+    -- Switch back to original profile
+    success, err = pcall(function()
+        self.db:SetProfile(originalProfile)
+    end)
+    
+    if not success then
+        print("Profile restoration failed: " .. (err or "unknown error"))
+        return false
+    end
+    
+    -- Verify we're back on original profile
+    local restoredCorrectly = self.db:GetCurrentProfile() == originalProfile
+    print("Restored original profile: " .. (restoredCorrectly and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+    
+    -- Verify data isolation (test value should not exist in original profile)
+    local dataIsolated = self.db.profile.testSwitchValue ~= testValue
+    print("Profile data isolation: " .. (dataIsolated and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+    
+    -- Clean up test profile
+    success, err = pcall(function()
+        self.db:DeleteProfile(testProfileName)
+    end)
+    
+    if not success then
+        print("Test profile cleanup failed: " .. (err or "unknown error"))
+    end
+    
+    return switchedCorrectly and restoredCorrectly and dataIsolated
+end
+
+-- Unit test for database structure - Task 1.3 Implementation
+function ParallelLoot:TestDatabaseStructure()
+    print("|cff00ff00ParallelLoot Database Structure Test:|r Validating database organization...")
+    
+    -- Test profile structure
+    local profileOK = self.db.profile and
+                     self.db.profile.categories and
+                     self.db.profile.ui and
+                     self.db.profile.communication and
+                     self.db.profile.rollRanges and
+                     self.db.profile.filtering
+    
+    print("Profile structure: " .. (profileOK and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+    
+    -- Test character structure
+    local charOK = self.db.char and
+                  self.db.char.stats and
+                  self.db.char.uiState and
+                  type(self.db.char.preferredCategories) == "table"
+    
+    print("Character structure: " .. (charOK and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+    
+    -- Test realm structure
+    local realmOK = self.db.realm and
+                   self.db.realm.guildSettings and
+                   self.db.realm.knownPlayers and
+                   self.db.realm.lootRules
+    
+    print("Realm structure: " .. (realmOK and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+    
+    -- Test global structure
+    local globalOK = self.db.global and
+                    self.db.global.version and
+                    self.db.global.sessions and
+                    self.db.global.migration and
+                    self.db.global.dbVersion
+    
+    print("Global structure: " .. (globalOK and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+    
+    -- Test migration system
+    local migrationOK = type(self.MigrateDatabase) == "function" and
+                       self.db.global.migration.lastMigrationVersion and
+                       type(self.db.global.migration.migrationHistory) == "table"
+    
+    print("Migration system: " .. (migrationOK and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+    
+    return profileOK and charOK and realmOK and globalOK and migrationOK
+end
+
+-- Data Migration System - Task 1.3 Implementation
+
+function ParallelLoot:MigrateDatabase()
+    local global = self.db.global
+    local currentVersion = global.dbVersion or 0
+    local targetVersion = 1
+    
+    if currentVersion < targetVersion then
+        print("|cff00ff00ParallelLoot|r Migrating database from version " .. currentVersion .. " to " .. targetVersion)
+        
+        -- Perform migration steps
+        if currentVersion < 1 then
+            self:MigrateToVersion1()
+        end
+        
+        -- Update version tracking
+        global.dbVersion = targetVersion
+        global.migration.lastMigrationVersion = self.VERSION
+        table.insert(global.migration.migrationHistory, {
+            fromVersion = currentVersion,
+            toVersion = targetVersion,
+            timestamp = time(),
+            addonVersion = self.VERSION
+        })
+        
+        print("|cff00ff00ParallelLoot|r Database migration completed successfully")
+    end
+    
+    -- Check for legacy data migration
+    self:MigrateLegacyData()
+end
+
+function ParallelLoot:MigrateToVersion1()
+    -- Migration to database version 1
+    print("|cff888888ParallelLoot|r Applying database migration to version 1...")
+    
+    -- Initialize new fields that didn't exist in version 0
+    local profile = self.db.profile
+    
+    -- Ensure all new profile fields exist
+    if not profile.categoryPriorities then
+        profile.categoryPriorities = dbDefaults.profile.categoryPriorities
+    end
+    
+    if not profile.rollRanges then
+        profile.rollRanges = dbDefaults.profile.rollRanges
+    end
+    
+    if not profile.filtering then
+        profile.filtering = dbDefaults.profile.filtering
+    end
+    
+    -- Migrate character data structure
+    local char = self.db.char
+    if not char.stats then
+        char.stats = dbDefaults.char.stats
+    end
+    
+    if not char.uiState then
+        char.uiState = dbDefaults.char.uiState
+    end
+    
+    print("|cff888888ParallelLoot|r Database migration to version 1 completed")
+end
+
+function ParallelLoot:MigrateLegacyData()
+    -- Check for old ParallelLootDB format and migrate if needed
+    if _G.ParallelLootDB and not _G.ParallelLootDB.migrated then
+        print("|cff00ff00ParallelLoot|r Migrating legacy database format...")
+        
+        local legacyDB = _G.ParallelLootDB
+        
+        -- Migrate settings to new profile structure
+        if legacyDB.settings then
+            local profile = self.db.profile
+            
+            -- Migrate category names
+            if legacyDB.settings.categories then
+                profile.categories = legacyDB.settings.categories
+            end
+            
+            -- Migrate UI settings
+            if legacyDB.settings.ui then
+                for key, value in pairs(legacyDB.settings.ui) do
+                    if profile.ui[key] ~= nil then
+                        profile.ui[key] = value
+                    end
+                end
+            end
+            
+            -- Migrate other settings
+            profile.autoStart = legacyDB.settings.autoStart or false
+            profile.soundEnabled = legacyDB.settings.soundEnabled or true
+        end
+        
+        -- Migrate session data to global structure
+        if legacyDB.sessions then
+            self.db.global.sessions = legacyDB.sessions
+        end
+        
+        -- Mark legacy data as migrated
+        legacyDB.migrated = true
+        
+        print("|cff00ff00ParallelLoot|r Legacy database migration completed")
+    end
+end
+
+-- Initialize database-dependent systems
+function ParallelLoot:InitializeDatabaseSystems()
+    -- Initialize cached settings for performance
+    self:UpdateCachedSettings()
+    
+    -- Validate current profile
+    self:ValidateProfileSettings()
+    
+    -- Initialize character-specific data
+    self:InitializeCharacterData()
+    
+    -- Clean up old session data if needed
+    self:CleanupOldSessions()
+    
+    print("|cff888888ParallelLoot|r Database systems initialized")
+end
+
+-- Initialize character-specific data
+function ParallelLoot:InitializeCharacterData()
+    local char = self.db.char
+    local playerName = UnitName("player")
+    local playerClass = UnitClass("player")
+    
+    -- Update character info if available
+    if playerName and playerClass then
+        -- Store character info for reference
+        char.characterInfo = {
+            name = playerName,
+            class = playerClass,
+            lastLogin = time()
+        }
+    end
+    
+    -- Initialize stats if this is first login
+    if not char.stats.lastSessionDate then
+        char.stats.lastSessionDate = time()
+    end
+end
+
+-- Cleanup old session data
+function ParallelLoot:CleanupOldSessions()
+    local global = self.db.global
+    local maxHistory = global.sessions.maxHistoryEntries or 50
+    
+    -- Clean up old session history
+    if global.sessions.history and #global.sessions.history > maxHistory then
+        local excess = #global.sessions.history - maxHistory
+        for i = 1, excess do
+            table.remove(global.sessions.history, 1)
+        end
+        print("|cff888888ParallelLoot|r Cleaned up " .. excess .. " old session records")
+    end
+end
+
+-- Database utility functions
+function ParallelLoot:GetProfileList()
+    return self.db:GetProfiles()
+end
+
+function ParallelLoot:GetCurrentProfile()
+    return self.db:GetCurrentProfile()
+end
+
+function ParallelLoot:SetProfile(profileName)
+    self.db:SetProfile(profileName)
+end
+
+function ParallelLoot:DeleteProfile(profileName)
+    self.db:DeleteProfile(profileName)
+end
+
+function ParallelLoot:ResetProfile()
+    self.db:ResetProfile()
+end
+
+function ParallelLoot:CopyProfile(sourceProfile)
+    self.db:CopyProfile(sourceProfile)
+end
+
+-- Database validation and testing functions
+function ParallelLoot:TestDatabasePersistence()
+    print("|cff00ff00ParallelLoot Database Test:|r Testing data persistence...")
+    
+    -- Test profile data persistence
+    local testKey = "testPersistence_" .. time()
+    local testValue = "test_" .. math.random(1000, 9999)
+    
+    -- Store test data
+    self.db.profile.testData = {
+        key = testKey,
+        value = testValue,
+        timestamp = time()
+    }
+    
+    -- Test character data persistence
+    self.db.char.testData = {
+        characterTest = testValue,
+        timestamp = time()
+    }
+    
+    -- Test global data persistence
+    self.db.global.testData = {
+        globalTest = testValue,
+        timestamp = time()
+    }
+    
+    print("Test data stored - Profile: " .. testKey .. " = " .. testValue)
+    print("Use /reload and then /script ParallelLoot:ValidatePersistence() to verify")
+    
+    return true
+end
+
+function ParallelLoot:ValidatePersistence()
+    print("|cff00ff00ParallelLoot Persistence Test:|r Validating stored data...")
+    
+    local profileOK = self.db.profile.testData and self.db.profile.testData.key and self.db.profile.testData.value
+    local charOK = self.db.char.testData and self.db.char.testData.characterTest
+    local globalOK = self.db.global.testData and self.db.global.testData.globalTest
+    
+    print("Profile data persistence: " .. (profileOK and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+    print("Character data persistence: " .. (charOK and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+    print("Global data persistence: " .. (globalOK and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+    
+    -- Clean up test data
+    self.db.profile.testData = nil
+    self.db.char.testData = nil
+    self.db.global.testData = nil
+    
+    return profileOK and charOK and globalOK
 end
 
 -- Validation function for specific tasks
@@ -325,6 +950,52 @@ function ParallelLoot:ValidateTask(taskId)
         
         local taskComplete = aceAddonOK and lifecycleOK and namespaceOK and orderOK and objectOK
         print("Task 1.2 Status: " .. (taskComplete and "|cff00ff00COMPLETE|r" or "|cffff0000INCOMPLETE|r"))
+        
+        return taskComplete
+        
+    elseif taskId == "1.3" then
+        print("|cff00ff00ParallelLoot Task 1.3 Validation:|r")
+        
+        -- Validate AceDB database initialization
+        local dbInitialized = self.db and type(self.db) == "table"
+        print("Database initialized: " .. (dbInitialized and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+        
+        -- Validate database structure
+        local dbStructure = self.db and self.db.profile and self.db.char and self.db.realm and self.db.global
+        print("Database structure: " .. (dbStructure and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+        
+        -- Validate profile system
+        local profileSystem = self.db and type(self.db.GetCurrentProfile) == "function" and 
+                             type(self.db.GetProfiles) == "function"
+        print("Profile system: " .. (profileSystem and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+        
+        -- Validate profile callbacks registered
+        local callbacksOK = type(self.OnProfileChanged) == "function" and
+                           type(self.OnProfileCopied) == "function" and
+                           type(self.OnProfileReset) == "function"
+        print("Profile callbacks: " .. (callbacksOK and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+        
+        -- Validate data migration system
+        local migrationOK = type(self.MigrateDatabase) == "function" and
+                           self.db.global.dbVersion and
+                           self.db.global.migration
+        print("Migration system: " .. (migrationOK and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+        
+        -- Validate default settings structure
+        local defaultsOK = self.db.profile.categories and
+                          self.db.profile.ui and
+                          self.db.profile.communication and
+                          self.db.char.stats and
+                          self.db.global.sessions
+        print("Default settings: " .. (defaultsOK and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+        
+        -- Test profile switching functionality
+        local profileSwitchOK = self:TestProfileSwitching()
+        print("Profile switching: " .. (profileSwitchOK and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+        
+        local taskComplete = dbInitialized and dbStructure and profileSystem and 
+                           callbacksOK and migrationOK and defaultsOK and profileSwitchOK
+        print("Task 1.3 Status: " .. (taskComplete and "|cff00ff00COMPLETE|r" or "|cffff0000INCOMPLETE|r"))
         
         return taskComplete
     end

@@ -1,10 +1,11 @@
 # ParallelLoot Addon Deployment Script
 # Copies the addon to your WoW AddOns directory
+# Defaults to Classic (MoP Classic) since this addon is designed for MoP Classic
 
 param(
     [string]$WowPath = "",
     [switch]$Retail,
-    [switch]$Classic,
+    [switch]$Classic = $true,  # Default to Classic for MoP Classic
     [switch]$Help
 )
 
@@ -12,20 +13,25 @@ function Show-Help {
     Write-Host @"
 ParallelLoot Addon Deployment Script
 =====================================
+Designed for Mists of Pandaria Classic - defaults to Classic deployment
 
 Usage:
   .\deploy-addon.ps1 [-WowPath <path>] [-Retail] [-Classic]
 
 Parameters:
   -WowPath   Specify custom WoW installation path
-  -Retail    Deploy to Retail (default)
-  -Classic   Deploy to Classic Era or Classic
+  -Retail    Deploy to Retail (overrides default Classic)
+  -Classic   Deploy to Classic Era or MoP Classic (DEFAULT)
   -Help      Show this help message
 
 Examples:
-  .\deploy-addon.ps1
-  .\deploy-addon.ps1 -Classic
-  .\deploy-addon.ps1 -WowPath "D:\Games\World of Warcraft"
+  .\deploy-addon.ps1                                    # Deploys to Classic (default)
+  .\deploy-addon.ps1 -Classic                          # Explicitly deploy to Classic
+  .\deploy-addon.ps1 -Retail                           # Deploy to Retail instead
+  .\deploy-addon.ps1 -WowPath "D:\Games\World of Warcraft"  # Custom path, Classic
+
+Note: This addon is specifically designed for Mists of Pandaria Classic.
+      Classic deployment is the default behavior.
 
 "@
     exit 0
@@ -67,10 +73,19 @@ if (-not (Test-Path $WowPath)) {
 }
 
 # Determine game version folder
-if ($Classic) {
-    $versionFolders = @("_classic_", "_classic_era_")
-} else {
+# Override Classic flag if Retail is explicitly specified
+if ($Retail) {
+    $Classic = $false
     $versionFolders = @("_retail_")
+    Write-Host "Deploying to Retail (overriding default Classic)" -ForegroundColor Yellow
+} elseif ($Classic) {
+    $versionFolders = @("_classic_", "_classic_era_")
+    Write-Host "Deploying to Classic (MoP Classic)" -ForegroundColor Cyan
+} else {
+    # Fallback to Classic as default
+    $Classic = $true
+    $versionFolders = @("_classic_", "_classic_era_")
+    Write-Host "Deploying to Classic (default for MoP Classic addon)" -ForegroundColor Cyan
 }
 
 $targetFolder = $null
