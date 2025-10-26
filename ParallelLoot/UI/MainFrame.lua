@@ -256,7 +256,7 @@ function UIManager:OnMainFrameHide(frame)
     ParallelLoot:DebugPrint("MainFrame hidden")
 end
 
--- Refresh the item list based on current tab
+-- Refresh the item list based on current tab (non-destructive)
 function UIManager:RefreshItemList()
     -- Safety check for scroll child
     if not self.scrollChild then
@@ -264,19 +264,16 @@ function UIManager:RefreshItemList()
         return
     end
     
-    -- Store expanded state of panels before refresh
-    local expandedStates = {}
-    for _, panel in pairs(self.activeItemPanels) do
-        if panel.lootItem then
-            expandedStates[panel.lootItem.id] = panel.isExpanded
-        end
+    -- Prevent recursive refreshes
+    if self.refreshInProgress then
+        ParallelLoot:DebugPrint("RefreshItemList: Refresh already in progress, skipping")
+        return
     end
     
-    -- Release existing panels back to pool
-    for _, panel in pairs(self.activeItemPanels) do
-        self:ReleaseItemPanel(panel)
-    end
-    self.activeItemPanels = {}
+    self.refreshInProgress = true
+    
+    -- Validate panel states and recover if corrupted
+    self:ValidateAndRecoverPanelStates()
     
     -- Get items based on current tab
     local items = {}
@@ -286,41 +283,468 @@ function UIManager:RefreshItemList()
         items = ParallelLoot.LootManager:GetAwardedItems() or {}
     end
     
-    -- Create item panels
-    local yOffset = -10
+    -- Use non-destructive update approach
+    local success = self:UpdateExistingPanels(items)
+    
+    if not success then
+        ParallelLoot:DebugPrint("RefreshItemList: Non-destructive update failed, falling back to full refresh")
+        self:PerformFullRefresh(items)
+    end
+    
+    -- Clean up stale states after update
+    self:CleanupPanelStates()
+    
+    -- Recalculate layout to ensure proper positioning
+    self:RecalculateLayout()
+    
+    -- Validate positioning to ensure no overlaps
+    self:ValidatePanelPositioning()
+    
+    -- Validate and fix panel dimensions
+    self:ValidateAndFixPanelDimensions()
+    
+    self.refreshInProgress = false
+    
+    ParallelLoot:DebugPrint("Refreshed item list with", #items, "items (non-destructive)")
+end
+
+-- Non-destructive panel update method
+function UIManager:UpdateExistingPanels(items)
+    if not items then
+        return false
+    end
+    
+    -- Initialize active panels if not exists
+    if not self.activeItemPanels then
+        self.activeItemPanels = {}
+    end
+    
+    -- Create lookup maps for efficient comparison
+    local currentPanelMap = {}
+    local newItemMap = {}
+    
+    -- Map current panels by item ID
+    for i, panel in pairs(self.activeItemPanels) do
+        if panel.lootItem and panel.lootItem.id then
+            currentPanelMap[panel.lootItem.id] = {
+                panel = panel,
+                index = i
+            }
+        end
+    end
+    
+    -- Map new items by ID
     for i, item in ipairs(items) do
-        -- Safety check for CreateItemPanel
+        if item.id then
+            newItemMap[item.id] = {
+                item = item,
+                index = i
+            }
+        end
+    end
+    
+    -- Track panels to keep, update, add, and remove
+    local panelsToKeep = {}
+    local panelsToUpdate = {}
+    local itemsToAdd = {}
+    local panelsToRemove = {}
+    
+    -- Identify panels to keep and update
+    for itemId, panelInfo in pairs(currentPanelMap) do
+        if newItemMap[itemId] then
+            -- Item still exists, keep panel and update data
+            table.insert(panelsToKeep, panelInfo.panel)
+            table.insert(panelsToUpdate, {
+                panel = panelInfo.panel,
+                item = newItemMap[itemId].item
+            })
+        else
+            -- Item no longer exists, mark for removal
+            table.insert(panelsToRemove, panelInfo.panel)
+        end
+    end
+    
+    -- Identify new items to add
+    for itemId, itemInfo in pairs(newItemMap) do
+        if not currentPanelMap[itemId] then
+            table.insert(itemsToAdd, itemInfo.item)
+        end
+    end
+    
+    ParallelLoot:DebugPrint("RefreshItemList: Non-destructive update - Keep:", #panelsToKeep, 
+        "Update:", #panelsToUpdate, "Add:", #itemsToAdd, "Remove:", #panelsToRemove)
+    
+    -- Preserve states for panels being updated
+    self:PreservePanelStatesForUpdate(panelsToUpdate)
+    
+    -- Remove panels for items that no longer exist
+    for _, panel in pairs(panelsToRemove) do
+        self:RemovePanelSafely(panel)
+    end
+    
+    -- Update existing panels with new data
+    for _, updateInfo in pairs(panelsToUpdate) do
+        local success = self:UpdateSinglePanel(updateInfo.panel, updateInfo.item)
+        if not success then
+            ParallelLoot:DebugPrint("RefreshItemList: Failed to update panel for item", updateInfo.item.id)
+            return false
+        end
+    end
+    
+    -- Add new panels for new items
+    local newPanels = {}
+    for _, item in pairs(itemsToAdd) do
         local success, panel = pcall(function()
             return self:CreateItemPanel(self.scrollChild, item)
         end)
         
         if success and panel then
-            panel:SetPoint("TOPLEFT", 0, yOffset)
-            
-            -- Restore expanded state if it was expanded before
-            if expandedStates[item.id] then
-                pcall(function()
-                    self:ToggleItemPanelExpanded(panel)
-                end)
+            table.insert(newPanels, panel)
+        else
+            ParallelLoot:DebugPrint("RefreshItemList: Failed to create panel for new item", item.id)
+            return false
+        end
+    end
+    
+    -- Rebuild active panels list in correct order
+    self:RebuildActivePanelsList(items, panelsToKeep, newPanels)
+    
+    -- Restore states for updated panels
+    self:RestorePanelStatesAfterUpdate()
+    
+    return true
+end
+
+-- Preserve panel states specifically for panels being updated
+function UIManager:PreservePanelStatesForUpdate(panelsToUpdate)
+    if not panelsToUpdate then
+        return
+    end
+    
+    for _, updateInfo in pairs(panelsToUpdate) do
+        local panel = updateInfo.panel
+        local item = updateInfo.item
+        
+        if panel and item and item.id then
+            if not self.panelStates[item.id] then
+                self.panelStates[item.id] = {}
             end
             
-            table.insert(self.activeItemPanels, panel)
+            self.panelStates[item.id].isExpanded = panel.isExpanded or false
+            self.panelStates[item.id].lastUpdate = time()
             
-            -- Adjust offset based on panel height
-            local panelHeight = panel:GetHeight() or 50 -- Default height if GetHeight fails
-            yOffset = yOffset - panelHeight - 10 -- 10px spacing between panels
+            ParallelLoot:DebugPrint("UIManager: Preserved state for updating panel", item.id, 
+                "expanded:", panel.isExpanded)
+        end
+    end
+end
+
+-- Restore panel states after non-destructive update
+function UIManager:RestorePanelStatesAfterUpdate()
+    if not self.activeItemPanels then
+        return
+    end
+    
+    for _, panel in pairs(self.activeItemPanels) do
+        if panel.lootItem and panel.lootItem.id then
+            local savedState = self.panelStates[panel.lootItem.id]
+            if savedState then
+                -- Only restore if state differs from current
+                if savedState.isExpanded ~= panel.isExpanded then
+                    if savedState.isExpanded then
+                        -- Expand panel without triggering full refresh
+                        self:ToggleItemPanelExpandedInternal(panel, true)
+                    else
+                        -- Collapse panel without triggering full refresh
+                        self:ToggleItemPanelExpandedInternal(panel, true)
+                    end
+                    
+                    ParallelLoot:DebugPrint("UIManager: Restored state for panel", panel.lootItem.id, 
+                        "expanded:", savedState.isExpanded)
+                end
+            end
+        end
+    end
+end
+
+-- Safely remove a panel from the UI
+function UIManager:RemovePanelSafely(panel)
+    if not panel then
+        return
+    end
+    
+    -- Clear panel state if it exists
+    if panel.lootItem and panel.lootItem.id then
+        self.panelStates[panel.lootItem.id] = nil
+    end
+    
+    -- Remove from active panels list
+    for i, activePanel in pairs(self.activeItemPanels) do
+        if activePanel == panel then
+            table.remove(self.activeItemPanels, i)
+            break
+        end
+    end
+    
+    -- Release panel back to pool
+    self:ReleaseItemPanel(panel)
+    
+    ParallelLoot:DebugPrint("UIManager: Safely removed panel")
+end
+
+-- Rebuild the active panels list in the correct order
+function UIManager:RebuildActivePanelsList(items, existingPanels, newPanels)
+    if not items then
+        return
+    end
+    
+    -- Create new active panels list
+    local newActivePanels = {}
+    local existingPanelMap = {}
+    local newPanelIndex = 1
+    
+    -- Map existing panels by item ID
+    for _, panel in pairs(existingPanels) do
+        if panel.lootItem and panel.lootItem.id then
+            existingPanelMap[panel.lootItem.id] = panel
+        end
+    end
+    
+    -- Build new list in item order
+    for _, item in ipairs(items) do
+        if item.id then
+            local panel = existingPanelMap[item.id]
+            if panel then
+                -- Use existing panel
+                table.insert(newActivePanels, panel)
+            else
+                -- Use new panel
+                if newPanels[newPanelIndex] then
+                    table.insert(newActivePanels, newPanels[newPanelIndex])
+                    newPanelIndex = newPanelIndex + 1
+                end
+            end
+        end
+    end
+    
+    -- Update active panels list
+    self.activeItemPanels = newActivePanels
+    
+    ParallelLoot:DebugPrint("UIManager: Rebuilt active panels list with", #newActivePanels, "panels")
+end
+
+-- Fallback to full refresh if non-destructive update fails
+function UIManager:PerformFullRefresh(items)
+    ParallelLoot:DebugPrint("UIManager: Performing full refresh fallback")
+    
+    -- Preserve panel states before destruction
+    self:PreservePanelStates()
+    
+    -- Release existing panels back to pool
+    if self.activeItemPanels then
+        for _, panel in pairs(self.activeItemPanels) do
+            self:ReleaseItemPanel(panel)
+        end
+    end
+    self.activeItemPanels = {}
+    
+    -- Create item panels
+    for i, item in ipairs(items) do
+        local success, panel = pcall(function()
+            return self:CreateItemPanel(self.scrollChild, item)
+        end)
+        
+        if success and panel then
+            table.insert(self.activeItemPanels, panel)
         else
             ParallelLoot:DebugPrint("Failed to create item panel for item:", item.id or "unknown")
         end
     end
     
-    -- Update scroll child height
-    local totalHeight = math.max(1, math.abs(yOffset) + 10)
-    if self.scrollChild then
-        self.scrollChild:SetHeight(totalHeight)
+    -- Restore panel states after creation
+    self:RestorePanelStates()
+    
+    ParallelLoot:DebugPrint("UIManager: Full refresh completed with", #items, "items")
+end
+
+-- Recalculate panel positions and scroll child height
+function UIManager:RecalculateLayout()
+    if not self.activeItemPanels or not self.scrollChild then
+        ParallelLoot:DebugPrint("UIManager: Cannot recalculate layout - missing panels or scroll child")
+        return
     end
     
-    ParallelLoot:DebugPrint("Refreshed item list with", #items, "items")
+    -- Prevent recursive layout calculations
+    if self.layoutCalculating then
+        ParallelLoot:DebugPrint("UIManager: Layout calculation already in progress, skipping")
+        return
+    end
+    
+    self.layoutCalculating = true
+    
+    ParallelLoot:DebugPrint("UIManager: Recalculating layout for", #self.activeItemPanels, "panels")
+    
+    -- Clear all existing points to prevent conflicts
+    for _, panel in pairs(self.activeItemPanels) do
+        if panel:IsShown() then
+            panel:ClearAllPoints()
+        end
+    end
+    
+    -- Recalculate positions with proper spacing and overlap prevention
+    local yOffset = -10 -- Start with 10px margin from top
+    local panelSpacing = 10 -- Space between panels
+    local positions = {} -- Track positions for debugging
+    
+    for i, panel in pairs(self.activeItemPanels) do
+        if panel:IsShown() then
+            -- Set position
+            panel:SetPoint("TOPLEFT", self.scrollChild, "TOPLEFT", 0, yOffset)
+            
+            -- Get actual panel height with validation and dimension fixing
+            local panelHeight = panel:GetHeight()
+            if not panelHeight or panelHeight <= 0 or panelHeight ~= panelHeight then -- NaN check
+                -- Calculate proper height based on panel state
+                if panel.isExpanded then
+                    local expandedHeight = self:CalculateExpandedHeight(panel)
+                    panelHeight = 80 + expandedHeight
+                else
+                    panelHeight = 80
+                end
+                
+                -- Apply corrected dimensions
+                self:SetPanelDimensions(panel, 640, panelHeight)
+                ParallelLoot:DebugPrint("UIManager: Fixed invalid height for panel", i, "set to", panelHeight)
+            end
+            
+            -- Ensure panel width is correct
+            local panelWidth = panel:GetWidth()
+            if not panelWidth or panelWidth <= 0 or panelWidth ~= panelWidth then
+                self:SetPanelDimensions(panel, 640, panelHeight)
+                ParallelLoot:DebugPrint("UIManager: Fixed invalid width for panel", i)
+            end
+            
+            -- Store position info for debugging
+            positions[i] = {
+                yOffset = yOffset,
+                height = panelHeight,
+                expanded = panel.isExpanded or false,
+                itemId = panel.lootItem and panel.lootItem.id or "unknown"
+            }
+            
+            -- Calculate next position
+            yOffset = yOffset - panelHeight - panelSpacing
+        end
+    end
+    
+    -- Update scroll child height with proper bounds
+    local totalContentHeight = math.abs(yOffset) + 10 -- Add bottom margin
+    totalContentHeight = math.max(totalContentHeight, 100) -- Minimum height
+    
+    -- Get scroll frame height to determine if scrolling is needed
+    local scrollFrameHeight = self.scrollFrame:GetHeight() or 400
+    local finalHeight = math.max(totalContentHeight, scrollFrameHeight)
+    
+    self.scrollChild:SetHeight(finalHeight)
+    
+    -- Ensure proper frame levels after layout changes
+    self:EnsureProperFrameLevels()
+    
+    -- Update layout state tracking
+    self.layoutDirty = false
+    self.lastLayoutUpdate = time()
+    
+    self.layoutCalculating = false
+    
+    ParallelLoot:DebugPrint("UIManager: Layout recalculated - Total height:", finalHeight, 
+        "Content height:", totalContentHeight, "Panels positioned:", #positions)
+    
+    -- Debug position information
+    for i, pos in pairs(positions) do
+        ParallelLoot:DebugPrint("  Panel", i, "- Item:", pos.itemId, "Y:", pos.yOffset, 
+            "Height:", pos.height, "Expanded:", pos.expanded)
+    end
+end
+
+-- Update panel positions when heights change (called after expand/collapse)
+function UIManager:UpdatePanelPositions()
+    -- Mark layout as dirty and trigger recalculation
+    self.layoutDirty = true
+    
+    -- Use event system for responsive updates
+    if self.TriggerLayoutUpdate then
+        self:TriggerLayoutUpdate()
+    else
+        -- Fallback for immediate execution
+        self:RecalculateLayout()
+    end
+end
+
+-- Validate panel positioning and fix overlaps
+function UIManager:ValidatePanelPositioning()
+    if not self.activeItemPanels or #self.activeItemPanels == 0 then
+        return true
+    end
+    
+    local hasOverlap = false
+    local positions = {}
+    
+    -- Collect current positions
+    for i, panel in pairs(self.activeItemPanels) do
+        if panel:IsShown() then
+            local _, _, _, _, yPos = panel:GetPoint(1)
+            local height = panel:GetHeight() or 80
+            positions[i] = {
+                panel = panel,
+                yPos = yPos or 0,
+                height = height,
+                bottom = (yPos or 0) - height
+            }
+        end
+    end
+    
+    -- Check for overlaps
+    for i = 1, #positions - 1 do
+        local current = positions[i]
+        local next = positions[i + 1]
+        
+        if current and next then
+            -- Check if current panel's bottom overlaps with next panel's top
+            if current.bottom > next.yPos then
+                hasOverlap = true
+                ParallelLoot:DebugPrint("UIManager: Overlap detected between panels", i, "and", i + 1)
+                break
+            end
+        end
+    end
+    
+    -- Fix overlaps by triggering layout recalculation
+    if hasOverlap then
+        ParallelLoot:DebugPrint("UIManager: Fixing panel overlaps")
+        self:RecalculateLayout()
+        return false
+    end
+    
+    return true
+end
+
+-- Get the total height needed for all panels
+function UIManager:CalculateTotalPanelHeight()
+    if not self.activeItemPanels then
+        return 100
+    end
+    
+    local totalHeight = 20 -- Top and bottom margins
+    local panelSpacing = 10
+    
+    for _, panel in pairs(self.activeItemPanels) do
+        if panel:IsShown() then
+            local panelHeight = panel:GetHeight() or 80
+            totalHeight = totalHeight + panelHeight + panelSpacing
+        end
+    end
+    
+    return totalHeight
 end
 
 ParallelLoot:DebugPrint("MainFrame.lua loaded")
