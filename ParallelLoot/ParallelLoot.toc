@@ -1,0 +1,56 @@
+## Interface: 100207
+## Title: ParallelLoot
+## Notes: Parallel loot rolling system for MoP Classic raids
+## Author: ParallelLoot Team
+## Version: 2.0.0
+## SavedVariables: ParallelLootDB
+## OptionalDeps: Ace3, LibSharedMedia-3.0, LibDeflate, LibWindow-1.1
+
+# Library Dependencies - Load Order Critical
+# LibStub (embedded in Ace3)
+Libs\Ace3\LibStub\LibStub.lua
+
+# CallbackHandler (required by many Ace3 modules)
+Libs\Ace3\CallbackHandler-1.0\CallbackHandler-1.0.lua
+
+# Core Ace3 Framework
+Libs\Ace3\AceAddon-3.0\AceAddon-3.0.lua
+Libs\Ace3\AceDB-3.0\AceDB-3.0.lua
+Libs\Ace3\AceEvent-3.0\AceEvent-3.0.lua
+
+# Ace3 Communication and Serialization
+Libs\Ace3\AceComm-3.0\AceComm-3.0.lua
+Libs\Ace3\AceSerializer-3.0\AceSerializer-3.0.lua
+
+# Ace3 Configuration System
+Libs\Ace3\AceConfig-3.0\AceConfig-3.0.lua
+Libs\Ace3\AceConfig-3.0\AceConfigRegistry-3.0\AceConfigRegistry-3.0.lua
+Libs\Ace3\AceConfig-3.0\AceConfigDialog-3.0\AceConfigDialog-3.0.lua
+
+# Ace3 GUI Framework
+Libs\Ace3\AceGUI-3.0\AceGUI-3.0.lua
+
+# AceGUI Widgets (Core widgets needed for UI)
+Libs\Ace3\AceGUI-3.0\widgets\AceGUIContainer-Frame.lua
+Libs\Ace3\AceGUI-3.0\widgets\AceGUIContainer-InlineGroup.lua
+Libs\Ace3\AceGUI-3.0\widgets\AceGUIContainer-ScrollFrame.lua
+Libs\Ace3\AceGUI-3.0\widgets\AceGUIContainer-SimpleGroup.lua
+Libs\Ace3\AceGUI-3.0\widgets\AceGUIContainer-TabGroup.lua
+Libs\Ace3\AceGUI-3.0\widgets\AceGUIWidget-Button.lua
+Libs\Ace3\AceGUI-3.0\widgets\AceGUIWidget-Label.lua
+Libs\Ace3\AceGUI-3.0\widgets\AceGUIWidget-Icon.lua
+Libs\Ace3\AceGUI-3.0\widgets\AceGUIWidget-InteractiveLabel.lua
+
+# Supporting Libraries
+Libs\LibSharedMedia-3.0\LibStub\LibStub.lua
+Libs\LibSharedMedia-3.0\CallbackHandler-1.0\CallbackHandler-1.0.lua
+Libs\LibSharedMedia-3.0\LibSharedMedia-3.0\LibSharedMedia-3.0.lua
+
+Libs\LibDeflate\LibStub\LibStub.lua
+Libs\LibDeflate\LibDeflate.lua
+
+Libs\LibWindow-1.1\LibStub.lua
+Libs\LibWindow-1.1\LibWindow-1.1\LibWindow-1.1.lua
+
+# Main Addon File
+ParallelLoot.lua
