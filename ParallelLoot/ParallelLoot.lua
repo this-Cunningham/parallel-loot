@@ -1485,3 +1485,143 @@ function ParallelLoot:ValidateTask(taskId)
     print("|cffff0000ParallelLoot:|r Unknown task ID: " .. tostring(taskId))
     return false
 end
+
+-- Run all validation tests and provide summary
+function ParallelLoot:RunAllValidationTests()
+    print("|cff00ff00ParallelLoot Comprehensive Validation:|r Running all task validation tests...")
+    print("=" .. string.rep("=", 60))
+    
+    local taskResults = {}
+    local completedTasks = {"1.1", "1.2", "1.3", "1.4", "2.1", "2.2"}
+    
+    for _, taskId in ipairs(completedTasks) do
+        print("\n|cff00ffff=== Task " .. taskId .. " Validation ===|r")
+        local success = self:ValidateTask(taskId)
+        taskResults[taskId] = success
+    end
+    
+    -- Summary
+    print("\n" .. string.rep("=", 60))
+    print("|cff00ff00VALIDATION SUMMARY:|r")
+    print(string.rep("=", 60))
+    
+    local passedCount = 0
+    local failedTasks = {}
+    
+    for _, taskId in ipairs(completedTasks) do
+        local status = taskResults[taskId]
+        if status then
+            print("Task " .. taskId .. ": |cff00ff00PASS|r")
+            passedCount = passedCount + 1
+        else
+            print("Task " .. taskId .. ": |cffff0000FAIL|r")
+            table.insert(failedTasks, taskId)
+        end
+    end
+    
+    print(string.rep("-", 60))
+    print("Total Tasks: " .. #completedTasks)
+    print("Passed: |cff00ff00" .. passedCount .. "|r")
+    print("Failed: |cffff0000" .. (#completedTasks - passedCount) .. "|r")
+    
+    if #failedTasks > 0 then
+        print("\n|cffff0000Failed Tasks:|r " .. table.concat(failedTasks, ", "))
+    else
+        print("\n|cff00ff00🎉 ALL VALIDATION TESTS PASSED! 🎉|r")
+    end
+    
+    print(string.rep("=", 60))
+    
+    return #failedTasks == 0
+end
+
+-- Quick smoketest for basic functionality
+function ParallelLoot:RunSmokeTest()
+    print("|cff00ff00ParallelLoot Smoke Test:|r Running quick functionality check...")
+    
+    local tests = {
+        {
+            name = "Addon Loading",
+            test = function()
+                return self and self.VERSION and self.db and self.isEnabled
+            end
+        },
+        {
+            name = "Library Dependencies",
+            test = function()
+                return self:ValidateLibraries()
+            end
+        },
+        {
+            name = "Database Initialization",
+            test = function()
+                return self.db and self.db.profile and self.db.global
+            end
+        },
+        {
+            name = "DataModels Module",
+            test = function()
+                return self.DataModels and self.DataModels.LootSession and self.DataModels.LootItem
+            end
+        },
+        {
+            name = "RollRangeManager Module",
+            test = function()
+                return self.RollRangeManager and type(self.RollRangeManager.GetNextRollRange) == "function"
+            end
+        },
+        {
+            name = "ThemeManager Module",
+            test = function()
+                return self.ThemeManager and self.ThemeManager.Colors
+            end
+        },
+        {
+            name = "Basic Range Assignment",
+            test = function()
+                if not self.RollRangeManager then return false end
+                self.RollRangeManager:ResetAllRanges()
+                local range = self.RollRangeManager:GetNextRollRange()
+                return range and range.baseRange == 1 and range.bis.max == 100
+            end
+        },
+        {
+            name = "Test Session Creation",
+            test = function()
+                local DataModels = ParallelLoot.DataModels
+                if not DataModels then return false end
+                local session = DataModels.LootSession:New("TestMaster")
+                if not session then return false end
+                if not session.masterId then return false end
+                return session.masterId == "TestMaster"
+            end
+        }
+    }
+    
+    local passed = 0
+    local failed = 0
+    
+    for _, test in ipairs(tests) do
+        local success, result = pcall(test.test)
+        if success and result then
+            print("  " .. test.name .. ": |cff00ff00PASS|r")
+            passed = passed + 1
+        else
+            print("  " .. test.name .. ": |cffff0000FAIL|r")
+            failed = failed + 1
+        end
+    end
+    
+    print("\n|cff00ff00Smoke Test Results:|r")
+    print("Passed: |cff00ff00" .. passed .. "|r / Failed: |cffff0000" .. failed .. "|r")
+    
+    local allPassed = failed == 0
+   
+  if allPassed then
+        print("|cff00ff00✅ Smoke test passed - Core functionality working!|r")
+    else
+        print("|cffff0000❌ Smoke test failed - Check addon installation|r")
+    end
+    
+    return allPassed
+end

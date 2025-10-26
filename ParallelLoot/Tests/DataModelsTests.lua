@@ -121,6 +121,12 @@ end
 
 function Tests.TestLootSessionRollRangeManagement()
     local DataModels = ParallelLoot.DataModels
+    
+    -- Reset ranges for clean test
+    if ParallelLoot.RollRangeManager then
+        ParallelLoot.RollRangeManager:ResetAllRanges()
+    end
+    
     local session = DataModels.LootSession:New("TestMaster")
     
     if not session then
@@ -130,7 +136,7 @@ function Tests.TestLootSessionRollRangeManagement()
     -- Test getting first roll range
     local range1 = session:GetNextRollRange()
     if not range1 or range1.baseRange ~= 1 then
-        return false, "First roll range should start at 1"
+        return false, "First roll range should start at 1, got " .. tostring(range1 and range1.baseRange or "nil")
     end
     
     if range1.bis.min ~= 1 or range1.bis.max ~= 100 then

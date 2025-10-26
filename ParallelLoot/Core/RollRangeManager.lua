@@ -469,14 +469,14 @@ function RollRangeManager:IntegrateWithLootSession()
     -- Override the GetNextRollRange method in LootSession to use our manager
     local originalGetNextRollRange = DataModels.LootSession.GetNextRollRange
     
-    DataModels.LootSession.GetNextRollRange = function(self)
+    function DataModels.LootSession:GetNextRollRange()
         return RollRangeManager:GetNextRollRange()
     end
     
     -- Override the AwardItem method to free ranges
     local originalAwardItem = DataModels.LootSession.AwardItem
     
-    DataModels.LootSession.AwardItem = function(self, itemId, awardedTo)
+    function DataModels.LootSession:AwardItem(itemId, awardedTo)
         -- Find the item to get its base range
         local item = nil
         for _, activeItem in ipairs(self.activeItems) do
