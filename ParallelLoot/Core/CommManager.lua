@@ -437,9 +437,13 @@ local commEventFrame = CreateFrame("Frame")
 -- Register addon communication prefix
 function CommManager:RegisterAddonPrefix()
     if not self.prefixRegistered then
-        RegisterAddonMessagePrefix(ParallelLoot.ADDON_PREFIX)
-        self.prefixRegistered = true
-        ParallelLoot:DebugPrint("CommManager: Registered addon prefix:", ParallelLoot.ADDON_PREFIX)
+        local result = C_ChatInfo.RegisterAddonMessagePrefix(ParallelLoot.ADDON_PREFIX)
+        if result == 0 then -- Success
+            self.prefixRegistered = true
+            ParallelLoot:DebugPrint("CommManager: Registered addon prefix:", ParallelLoot.ADDON_PREFIX)
+        else
+            ParallelLoot:DebugPrint("CommManager: Failed to register addon prefix. Result:", result)
+        end
     end
 end
 
@@ -473,7 +477,7 @@ function CommManager:SendMessage(message, target)
     -- Send message
     local success = ChatThrottleLib and 
         ChatThrottleLib:SendAddonMessage("NORMAL", ParallelLoot.ADDON_PREFIX, serialized, channel, target) or
-        SendAddonMessage(ParallelLoot.ADDON_PREFIX, serialized, channel, target)
+        C_ChatInfo.SendAddonMessage(ParallelLoot.ADDON_PREFIX, serialized, channel, target)
     
     if success == false then
         self:HandleMessageError("Failed to send message", "SendMessage")

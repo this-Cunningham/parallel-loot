@@ -1,28 +1,18 @@
 <Ui xmlns="http://www.blizzard.com/wow/ui/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.blizzard.com/wow/ui/">
     
+    <Script file="MainFrame.lua"/>
     <Script file="CategoryButtons.lua"/>
     <Script file="ItemPanel.lua"/>
     <Script file="RollDisplay.lua"/>
     
     <!-- Main Loot Session Frame -->
-    <Frame name="ParallelLootMainFrame" parent="UIParent" movable="true" resizable="true" enableMouse="true" hidden="true" frameStrata="MEDIUM">
+    <Frame name="ParallelLootMainFrame" parent="UIParent" movable="true" resizable="true" enableMouse="true" hidden="true" frameStrata="MEDIUM" inherits="BackdropTemplate">
         <Size x="700" y="500"/>
         <Anchors>
             <Anchor point="CENTER"/>
         </Anchors>
         
-        <!-- Background -->
-        <Backdrop bgFile="Interface\DialogFrame\UI-DialogBox-Background" edgeFile="Interface\DialogFrame\UI-DialogBox-Border" tile="true">
-            <BackgroundInsets>
-                <AbsInset left="11" right="12" top="12" bottom="11"/>
-            </BackgroundInsets>
-            <TileSize>
-                <AbsValue val="32"/>
-            </TileSize>
-            <EdgeSize>
-                <AbsValue val="32"/>
-            </EdgeSize>
-        </Backdrop>
+        <!-- Background will be set in Lua with BackdropTemplate -->
         
         <Layers>
             <!-- Title Text -->
@@ -99,5 +89,4 @@
         </Scripts>
     </Frame>
     
-    <Script file="MainFrame.lua"/>
 </Ui>

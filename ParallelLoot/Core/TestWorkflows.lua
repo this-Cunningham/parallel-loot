@@ -79,8 +79,24 @@ end
 function TestWorkflows:TestSessionManagement()
     ParallelLoot:Print("=== Testing Session Management Workflow ===")
     
+    -- Debug: Check loot master status before starting session
+    local isLootMaster = ParallelLoot.LootMasterManager:IsPlayerLootMaster()
+    ParallelLoot:Print("Debug: Player is loot master:", isLootMaster)
+    ParallelLoot:Print("Debug: Current loot master:", ParallelLoot.LootMasterManager.currentLootMaster)
+    
+    -- Force loot master detection for testing
+    ParallelLoot.LootMasterManager:DetectLootMaster()
+    
+    -- Check if there's already an existing session and end it
+    local existingSession = ParallelLoot.DataManager:GetCurrentSession()
+    if existingSession then
+        ParallelLoot:Print("Debug: Found existing session, ending it first")
+        ParallelLoot.Integration:EndSession()
+    end
+    
     -- Test 1: Start session
     local success = ParallelLoot.Integration:StartSession()
+    ParallelLoot:Print("Debug: StartSession returned:", success)
     self:Assert(success, "Start Session", "Failed to start session")
     
     -- Test 2: Verify session exists
@@ -112,6 +128,10 @@ end
 
 function TestWorkflows:TestLootManagement()
     ParallelLoot:Print("=== Testing Loot Management Workflow ===")
+    
+    -- Reset roll manager state for consistent testing
+    ParallelLoot.RollManager.nextRangeBase = 1
+    ParallelLoot.RollManager.availableRanges = {}
     
     -- Start a session first
     ParallelLoot.Integration:StartSession()
@@ -506,6 +526,135 @@ function TestWorkflows:TestRollRangeManagement()
 end
 
 -- ============================================================================
+-- WORKFLOW 8: UNIQUE ROLL RANGE TESTS
+-- ============================================================================
+
+function TestWorkflows:TestUniqueRollRanges()
+    ParallelLoot:Print("=== Testing Unique Roll Ranges ===")
+    
+    -- Reset roll manager state for clean testing
+    ParallelLoot.RollManager.nextRangeBase = 1
+    ParallelLoot.RollManager.availableRanges = {}
+    
+    -- Start session
+    ParallelLoot.Integration:StartSession()
+    local session = ParallelLoot.DataManager:GetCurrentSession()
+    
+    if not session then
+        ParallelLoot:Print("Cannot test unique roll ranges without active session")
+        return
+    end
+    
+    -- Test 1: Create multiple items with unique ranges
+    local items = {}
+    local ranges = {}
+    
+    for i = 1, 5 do
+        local item = {
+            id = "unique_test_item_" .. i,
+            itemLink = "|cff0070dd|Hitem:" .. (12000 + i) .. ":0:0:0:0:0:0:0|h[Unique Test Item " .. i .. "]|h|r",
+            itemId = 12000 + i,
+            itemName = "Unique Test Item " .. i,
+            quality = 4,
+            icon = "Interface\\Icons\\INV_Misc_QuestionMark",
+            quantity = 1,
+            dropTime = time(),
+            expiryTime = time() + 7200,
+            rolls = {},
+            awardedTo = nil,
+            awardTime = nil
+        }
+        
+        -- Assign roll range
+        local rollRange = ParallelLoot.RollManager:AssignRollRange()
+        item.rollRange = rollRange
+        
+        table.insert(items, item)
+        table.insert(ranges, rollRange)
+        table.insert(session.activeItems, item)
+    end
+    
+    -- Test 2: Verify all ranges are unique
+    for i = 1, #ranges do
+        for j = i + 1, #ranges do
+            local range1 = ranges[i]
+            local range2 = ranges[j]
+            
+            -- Check BIS ranges don't overlap
+            local overlap = not (range1.bis.max < range2.bis.min or range2.bis.max < range1.bis.min)
+            self:Assert(not overlap, "BIS Range " .. i .. " vs " .. j .. " Unique", "BIS ranges overlap")
+            
+            -- Check MS ranges don't overlap
+            overlap = not (range1.ms.max < range2.ms.min or range2.ms.max < range1.ms.min)
+            self:Assert(not overlap, "MS Range " .. i .. " vs " .. j .. " Unique", "MS ranges overlap")
+            
+            -- Check OS ranges don't overlap
+            overlap = not (range1.os.max < range2.os.min or range2.os.max < range1.os.min)
+            self:Assert(not overlap, "OS Range " .. i .. " vs " .. j .. " Unique", "OS ranges overlap")
+            
+            -- Check COZ ranges don't overlap
+            overlap = not (range1.coz.max < range2.coz.min or range2.coz.max < range1.coz.min)
+            self:Assert(not overlap, "COZ Range " .. i .. " vs " .. j .. " Unique", "COZ ranges overlap")
+        end
+    end
+    
+    -- Test 3: Verify expected range values
+    self:Assert(ranges[1].bis.min == 1, "First Item BIS Min", "First item BIS min incorrect")
+    self:Assert(ranges[1].bis.max == 100, "First Item BIS Max", "First item BIS max incorrect")
+    self:Assert(ranges[2].bis.min == 101, "Second Item BIS Min", "Second item BIS min incorrect")
+    self:Assert(ranges[2].bis.max == 200, "Second Item BIS Max", "Second item BIS max incorrect")
+    self:Assert(ranges[5].bis.min == 401, "Fifth Item BIS Min", "Fifth item BIS min incorrect")
+    self:Assert(ranges[5].bis.max == 500, "Fifth Item BIS Max", "Fifth item BIS max incorrect")
+    
+    -- Test 4: Verify category offsets within each range
+    for i, range in ipairs(ranges) do
+        local baseMin = range.bis.min
+        
+        self:Assert(range.bis.min == baseMin, "Item " .. i .. " BIS Offset", "BIS offset incorrect")
+        self:Assert(range.ms.min == baseMin and range.ms.max == baseMin + 98, "Item " .. i .. " MS Offset", "MS offset incorrect")
+        self:Assert(range.os.min == baseMin and range.os.max == baseMin + 97, "Item " .. i .. " OS Offset", "OS offset incorrect")
+        self:Assert(range.coz.min == baseMin and range.coz.max == baseMin + 96, "Item " .. i .. " COZ Offset", "COZ offset incorrect")
+    end
+    
+    -- Test 5: Test range recycling maintains uniqueness
+    local originalRange = ranges[3]
+    
+    -- Award item 3 to free its range
+    ParallelLoot.Integration:AwardItem(items[3].id, "TestPlayer")
+    
+    -- Create new item - should reuse the freed range
+    local newItem = {
+        id = "recycled_test_item",
+        itemLink = "|cff0070dd|Hitem:13000:0:0:0:0:0:0:0|h[Recycled Test Item]|h|r",
+        itemId = 13000,
+        itemName = "Recycled Test Item",
+        quality = 4,
+        icon = "Interface\\Icons\\INV_Misc_QuestionMark",
+        quantity = 1,
+        dropTime = time(),
+        expiryTime = time() + 7200,
+        rolls = {},
+        awardedTo = nil,
+        awardTime = nil
+    }
+    
+    local recycledRange = ParallelLoot.RollManager:AssignRollRange()
+    newItem.rollRange = recycledRange
+    
+    self:Assert(recycledRange.bis.min == originalRange.bis.min, "Recycled Range Reused", "Recycled range not reused correctly")
+    
+    -- Test 6: Verify no conflicts after recycling
+    session = ParallelLoot.DataManager:GetCurrentSession()
+    local conflicts = ParallelLoot.DataManager:DetectRangeConflicts(session)
+    self:Assert(#conflicts == 0, "No Conflicts After Recycling", "Range conflicts after recycling")
+    
+    -- Clean up
+    ParallelLoot.Integration:EndSession()
+    
+    self:PrintSummary()
+end
+
+-- ============================================================================
 -- RUN ALL TESTS
 -- ============================================================================
 
@@ -520,6 +669,7 @@ function TestWorkflows:RunAllTests()
     self:TestDataPersistence()
     self:TestTimerWorkflow()
     self:TestRollRangeManagement()
+    self:TestUniqueRollRanges()
     
     ParallelLoot:Print("=== All Tests Complete ===")
     self:PrintSummary()
@@ -549,6 +699,8 @@ SlashCmdList["PLTEST"] = function(msg)
         TestWorkflows:TestTimerWorkflow()
     elseif command == "range" then
         TestWorkflows:TestRollRangeManagement()
+    elseif command == "unique" then
+        TestWorkflows:TestUniqueRollRanges()
     elseif command == "clear" then
         TestWorkflows:ClearResults()
     elseif command == "summary" then
@@ -563,6 +715,7 @@ SlashCmdList["PLTEST"] = function(msg)
         print("  /pltest persist - Test data persistence")
         print("  /pltest timer - Test timer management")
         print("  /pltest range - Test roll range management")
+        print("  /pltest unique - Test unique roll ranges")
         print("  /pltest clear - Clear test results")
         print("  /pltest summary - Show test summary")
     end

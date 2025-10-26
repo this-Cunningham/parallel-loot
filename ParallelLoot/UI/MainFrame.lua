@@ -18,6 +18,22 @@ UIManager.itemPanels = {}
 function UIManager:OnMainFrameLoad(frame)
     self.mainFrame = frame
     
+    -- Set backdrop using BackdropTemplate
+    if frame.SetBackdrop then
+        local backdrop = {
+            bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+            edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+            tile = true,
+            tileSize = 32,
+            edgeSize = 32,
+            insets = { left = 11, right = 12, top = 12, bottom = 11 }
+        }
+        frame:SetBackdrop(backdrop)
+        ParallelLoot:DebugPrint("Backdrop set successfully")
+    else
+        ParallelLoot:DebugPrint("SetBackdrop method not available")
+    end
+    
     -- Store loot master status indicator
     self.lootMasterIndicator = nil
     
@@ -44,16 +60,23 @@ function UIManager:OnMainFrameLoad(frame)
         end)
     end
     
-    -- Set minimum size
-    frame:SetMinResize(500, 400)
-    frame:SetMaxResize(1200, 900)
+    -- Set resize bounds (SetMinResize/SetMaxResize don't exist in MoP Classic)
+    -- frame:SetMinResize(500, 400)
+    -- frame:SetMaxResize(1200, 900)
+    ParallelLoot:DebugPrint("Resize bounds disabled - not available in MoP Classic")
     
     -- Create tabs
     self:CreateTabs()
     
     -- Initialize scroll frame
-    self.scrollFrame = frame.ParallelLootMainFrameScrollFrame
-    self.scrollChild = self.scrollFrame.ParallelLootMainFrameScrollFrameScrollChild
+    self.scrollFrame = frame:GetChildren() and frame.ParallelLootMainFrameScrollFrame or _G["ParallelLootMainFrameScrollFrame"]
+    if self.scrollFrame then
+        self.scrollChild = self.scrollFrame:GetScrollChild() or _G["ParallelLootMainFrameScrollFrameScrollChild"]
+    end
+    
+    -- Debug scroll frame references
+    ParallelLoot:DebugPrint("ScrollFrame:", self.scrollFrame and "found" or "nil")
+    ParallelLoot:DebugPrint("ScrollChild:", self.scrollChild and "found" or "nil")
     
     -- Create loot master indicator
     self:CreateLootMasterIndicator()
@@ -78,7 +101,9 @@ function UIManager:CreateTabs()
     activeTab:GetNormalTexture():SetTexCoord(0, 1, 0, 1)
     
     activeTab:SetScript("OnClick", function()
-        UIManager:SwitchTab(UIManager.TABS.ACTIVE)
+        pcall(function()
+            UIManager:SwitchTab(UIManager.TABS.ACTIVE)
+        end)
     end)
     
     -- Awarded Items Tab
@@ -93,7 +118,9 @@ function UIManager:CreateTabs()
     awardedTab:GetNormalTexture():SetTexCoord(0, 1, 0, 1)
     
     awardedTab:SetScript("OnClick", function()
-        UIManager:SwitchTab(UIManager.TABS.AWARDED)
+        pcall(function()
+            UIManager:SwitchTab(UIManager.TABS.AWARDED)
+        end)
     end)
     
     self.tabs[self.TABS.ACTIVE] = activeTab
@@ -179,7 +206,13 @@ function UIManager:CreateSettingsButton()
     settingsButton:SetText("Settings")
     
     settingsButton:SetScript("OnClick", function()
-        UIManager:ToggleSettingsPanel()
+        local success, err = pcall(function()
+            UIManager:ToggleSettingsPanel()
+        end)
+        if not success then
+            ParallelLoot:DebugPrint("Error opening settings:", err)
+            ParallelLoot:Print("Settings panel temporarily unavailable")
+        end
     end)
     
     self.settingsButton = settingsButton
@@ -225,6 +258,12 @@ end
 
 -- Refresh the item list based on current tab
 function UIManager:RefreshItemList()
+    -- Safety check for scroll child
+    if not self.scrollChild then
+        ParallelLoot:DebugPrint("RefreshItemList: scrollChild is nil, skipping refresh")
+        return
+    end
+    
     -- Store expanded state of panels before refresh
     local expandedStates = {}
     for _, panel in pairs(self.activeItemPanels) do
@@ -250,24 +289,36 @@ function UIManager:RefreshItemList()
     -- Create item panels
     local yOffset = -10
     for i, item in ipairs(items) do
-        local panel = self:CreateItemPanel(self.scrollChild, item)
-        panel:SetPoint("TOPLEFT", 0, yOffset)
+        -- Safety check for CreateItemPanel
+        local success, panel = pcall(function()
+            return self:CreateItemPanel(self.scrollChild, item)
+        end)
         
-        -- Restore expanded state if it was expanded before
-        if expandedStates[item.id] then
-            self:ToggleItemPanelExpanded(panel)
+        if success and panel then
+            panel:SetPoint("TOPLEFT", 0, yOffset)
+            
+            -- Restore expanded state if it was expanded before
+            if expandedStates[item.id] then
+                pcall(function()
+                    self:ToggleItemPanelExpanded(panel)
+                end)
+            end
+            
+            table.insert(self.activeItemPanels, panel)
+            
+            -- Adjust offset based on panel height
+            local panelHeight = panel:GetHeight() or 50 -- Default height if GetHeight fails
+            yOffset = yOffset - panelHeight - 10 -- 10px spacing between panels
+        else
+            ParallelLoot:DebugPrint("Failed to create item panel for item:", item.id or "unknown")
         end
-        
-        table.insert(self.activeItemPanels, panel)
-        
-        -- Adjust offset based on panel height
-        local panelHeight = panel:GetHeight()
-        yOffset = yOffset - panelHeight - 10 -- 10px spacing between panels
     end
     
     -- Update scroll child height
     local totalHeight = math.max(1, math.abs(yOffset) + 10)
-    self.scrollChild:SetHeight(totalHeight)
+    if self.scrollChild then
+        self.scrollChild:SetHeight(totalHeight)
+    end
     
     ParallelLoot:DebugPrint("Refreshed item list with", #items, "items")
 end

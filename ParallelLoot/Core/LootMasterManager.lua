@@ -44,13 +44,13 @@ end
 
 -- Detect who the current loot master is
 function LootMasterManager:DetectLootMaster()
-    local lootMethod, masterLooterPartyID, masterLooterRaidID = GetLootMethod()
+    local lootMethod, masterLooterPartyID, masterLooterRaidID = C_PartyInfo.GetLootMethod()
     
     ParallelLoot:DebugPrint("LootMasterManager: Loot method:", lootMethod)
     
     local newLootMaster = nil
     
-    if lootMethod == "master" then
+    if lootMethod == 2 then -- 2 = Enum.LootMethod.MasterLooter
         -- Master looter is active
         if masterLooterRaidID then
             -- In a raid

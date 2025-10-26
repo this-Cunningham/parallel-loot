@@ -80,17 +80,9 @@ end
 
 -- Parse a specific loot slot and create LootItem
 function LootManager:ParseLootSlot(slot)
-    -- Get loot slot info
-    local icon, name, quantity, currencyID, quality = GetLootSlotInfo(slot)
-    
-    -- Skip if no item (could be currency or empty)
-    if not name or currencyID then
-        return
-    end
-    
-    -- Get item link
+    -- Get item link first (this works in MoP Classic)
     local itemLink = GetLootSlotLink(slot)
-    if not itemLink then
+    if not itemLink or itemLink == "" then
         ParallelLoot:DebugPrint("LootManager: No item link for slot", slot)
         return
     end
@@ -101,6 +93,15 @@ function LootManager:ParseLootSlot(slot)
         ParallelLoot:DebugPrint("LootManager: Could not extract item ID from link:", itemLink)
         return
     end
+    
+    -- Get item info from the item ID (since GetLootSlotInfo doesn't work)
+    local itemName, _, itemQuality, _, _, _, _, _, _, itemTexture = C_Item.GetItemInfo(itemId)
+    
+    -- Use defaults if item info not available yet
+    local name = itemName or "Unknown Item"
+    local quality = itemQuality or 1
+    local icon = itemTexture or "Interface\\Icons\\INV_Misc_QuestionMark"
+    local quantity = 1 -- Default quantity since we can't get it from GetLootSlotInfo
     
     -- Create LootItem object
     local lootItem = self:CreateLootItem(itemLink, itemId, quality, icon, name, quantity)
@@ -133,7 +134,7 @@ function LootManager:CreateLootItem(itemLink, itemId, quality, icon, name, quant
     
     -- Get item metadata
     local itemName, itemLink, itemRarity, itemLevel, itemMinLevel, itemType, itemSubType, 
-          itemStackCount, itemEquipLoc, itemTexture = GetItemInfo(itemId)
+          itemStackCount, itemEquipLoc, itemTexture = C_Item.GetItemInfo(itemId)
     
     -- Create LootItem structure
     local lootItem = {

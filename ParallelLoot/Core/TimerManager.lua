@@ -328,7 +328,7 @@ end
 function TimerManager:CheckExpiredItems()
     local session = ParallelLoot.DataManager:GetCurrentSession()
     if not session then
-        return
+        return 0
     end
     
     local currentTime = time()
@@ -497,7 +497,7 @@ end
 
 -- Cleanup expired items from session
 function TimerManager:CleanupExpiredItems()
-    local removed = self:CheckExpiredItems()
+    local removed = self:CheckExpiredItems() or 0
     
     if removed > 0 then
         ParallelLoot:DebugPrint("TimerManager: Cleaned up", removed, "expired items")
