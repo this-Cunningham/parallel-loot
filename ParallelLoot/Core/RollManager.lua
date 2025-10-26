@@ -6,11 +6,7 @@ local RollManager = ParallelLoot.RollManager
 -- Event frame for chat events
 local rollEventFrame = CreateFrame("Frame")
 
--- Next available roll range base
-RollManager.nextRangeBase = 1
 
--- Available ranges for reuse (freed from awarded items)
-RollManager.availableRanges = {}
 
 -- Initialize the roll manager
 function RollManager:Initialize()
@@ -24,9 +20,7 @@ function RollManager:Initialize()
         RollManager:OnEvent(event, ...)
     end)
     
-    -- Initialize range tracking
-    self.nextRangeBase = 1
-    self.availableRanges = {}
+
     
     ParallelLoot:DebugPrint("RollManager: Initialized")
 end
@@ -108,12 +102,16 @@ function RollManager:FindItemByRollRange(rollValue, minRoll, maxRoll)
     -- Check all active items
     for _, item in ipairs(session.activeItems) do
         if item.rollRange then
-            -- Check each category
-            for category, range in pairs(item.rollRange) do
-                if minRoll == range.min and maxRoll == range.max then
-                    -- Verify roll value is within range
-                    if rollValue >= range.min and rollValue <= range.max then
-                        return item, category
+            -- Check only the category fields (not 'base')
+            local categories = {"bis", "ms", "os", "coz"}
+            for _, category in ipairs(categories) do
+                local range = item.rollRange[category]
+                if range and range.min and range.max then
+                    if minRoll == range.min and maxRoll == range.max then
+                        -- Verify roll value is within range
+                        if rollValue >= range.min and rollValue <= range.max then
+                            return item, category
+                        end
                     end
                 end
             end
@@ -125,6 +123,8 @@ end
 
 -- Validate a roll
 function RollManager:ValidateRoll(item, playerName, rollValue, minRoll, maxRoll, category)
+    ParallelLoot:DebugPrint("RollManager: Validating roll for", playerName, "value:", rollValue, "range:", minRoll, "-", maxRoll, "category:", category)
+    
     -- Check if player already rolled for this item
     if self:HasPlayerRolled(item, playerName) then
         ParallelLoot:Print(playerName .. " has already rolled on this item")
@@ -138,6 +138,8 @@ function RollManager:ValidateRoll(item, playerName, rollValue, minRoll, maxRoll,
         return false, "Invalid category"
     end
     
+    ParallelLoot:DebugPrint("RollManager: Item range for", category, "is", range.min, "-", range.max)
+    
     if rollValue < range.min or rollValue > range.max then
         ParallelLoot:DebugPrint("RollManager: Roll value", rollValue, "outside range", range.min, "-", range.max)
         return false, "Roll value outside of valid range"
@@ -148,6 +150,7 @@ function RollManager:ValidateRoll(item, playerName, rollValue, minRoll, maxRoll,
         return false, "Roll range does not match item range"
     end
     
+    ParallelLoot:DebugPrint("RollManager: Roll validation passed")
     return true
 end
 
@@ -202,45 +205,9 @@ function RollManager:AddRollToItem(item, playerName, rollValue, category)
     ParallelLoot:DebugPrint("RollManager: Roll added -", playerName, rollValue, "for", category)
 end
 
--- Assign roll range to a new item
-function RollManager:AssignRollRange()
-    local baseRange
-    
-    -- Check if we have any available ranges to reuse
-    if #self.availableRanges > 0 then
-        baseRange = table.remove(self.availableRanges, 1)
-        ParallelLoot:DebugPrint("RollManager: Reusing range base", baseRange)
-    else
-        baseRange = self.nextRangeBase
-        self.nextRangeBase = self.nextRangeBase + 100
-        ParallelLoot:DebugPrint("RollManager: Assigning new range base", baseRange)
-    end
-    
-    -- Create roll ranges for each category
-    local rollRange = {
-        bis = { min = baseRange, max = baseRange + 99 },
-        ms = { min = baseRange, max = baseRange + 98 },
-        os = { min = baseRange, max = baseRange + 97 },
-        coz = { min = baseRange, max = baseRange + 96 }
-    }
-    
-    return rollRange
-end
 
--- Free a roll range when item is awarded (for reuse)
-function RollManager:FreeRollRange(rollRange)
-    if not rollRange or not rollRange.bis then
-        return
-    end
-    
-    local baseRange = rollRange.bis.min
-    
-    -- Add to available ranges (keep sorted)
-    table.insert(self.availableRanges, baseRange)
-    table.sort(self.availableRanges)
-    
-    ParallelLoot:DebugPrint("RollManager: Freed range base", baseRange)
-end
+
+
 
 -- Get rolls for an item by category
 function RollManager:GetRollsByCategory(item)

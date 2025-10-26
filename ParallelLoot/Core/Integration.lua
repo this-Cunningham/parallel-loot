@@ -270,7 +270,7 @@ function Integration:AwardItem(itemId, playerName)
     
     -- Recycle roll range
     if item.rollRange then
-        ParallelLoot.RollManager:FreeRollRange(item.rollRange)
+        ParallelLoot.DataManager:RecycleRollRange(session, item.rollRange)
     end
     
     -- Save session
@@ -328,7 +328,7 @@ function Integration:RevokeAward(itemId)
     item.awardTime = nil
     
     -- Assign new roll range
-    local newRange = ParallelLoot.RollManager:AssignRollRange()
+    local newRange = ParallelLoot.DataManager:AssignRollRange(session)
     item.rollRange = newRange
     
     -- Move back to active items

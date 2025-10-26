@@ -197,7 +197,7 @@ function LootManager:AddItemToSession(lootItem)
     end
     
     -- Assign roll range
-    local rollRange = ParallelLoot.RollManager:AssignRollRange()
+    local rollRange = ParallelLoot.DataManager:AssignRollRange(session)
     if rollRange then
         lootItem.rollRange = rollRange
         ParallelLoot:DebugPrint("LootManager: Assigned roll range:", rollRange.bis.min, "-", rollRange.bis.max)
