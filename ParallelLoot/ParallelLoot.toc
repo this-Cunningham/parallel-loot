@@ -54,3 +54,6 @@ Libs\LibWindow-1.1\LibWindow-1.1\LibWindow-1.1.lua
 
 # Main Addon File
 ParallelLoot.lua
+
+# UI Modules (loaded after main addon)
+UI\ThemeManager.lua

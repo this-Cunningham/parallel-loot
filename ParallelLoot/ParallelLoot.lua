@@ -227,6 +227,8 @@ function ParallelLoot:OnInitialize()
     self.CommManager = {}
     self.DataManager = {}
     
+    -- ThemeManager will be initialized after all files are loaded
+    
     -- Set up communication
     self:RegisterComm(self.ADDON_PREFIX)
     
@@ -253,6 +255,9 @@ function ParallelLoot:OnEnable()
     -- Register essential events (will be expanded in future tasks)
     self:RegisterEvent("ADDON_LOADED")
     self:RegisterEvent("PLAYER_LOGIN")
+    
+    -- Initialize ThemeManager - Task 1.4 Implementation
+    self:InitializeThemeManager()
     
     -- Set addon as enabled
     self.isEnabled = true
@@ -480,8 +485,12 @@ function ParallelLoot:RunTests()
     local persistenceOK = self:TestDatabaseStructure()
     print("Database structure: " .. (persistenceOK and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
     
+    -- Test 8: Theme system validation (Task 1.4)
+    local themeSystemOK = self:TestThemeSystem()
+    print("Theme system: " .. (themeSystemOK and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+    
     local allTestsPass = librariesOK and dbOK and addonOK and aceFrameworkOK and 
-                        lifecycleOK and profileSystemOK and persistenceOK
+                        lifecycleOK and profileSystemOK and persistenceOK and themeSystemOK
     print("|cff00ff00ParallelLoot Test Suite:|r " .. (allTestsPass and "|cff00ff00ALL TESTS PASSED|r" or "|cffff0000SOME TESTS FAILED|r"))
     
     return allTestsPass
@@ -824,6 +833,34 @@ function ParallelLoot:CleanupOldSessions()
     end
 end
 
+-- ThemeManager initialization - Task 1.4 Implementation
+function ParallelLoot:InitializeThemeManager()
+    -- Initialize ThemeManager if available
+    if self.ThemeManager then
+        self.ThemeManager:Initialize()
+        print("|cff888888ParallelLoot:|r ThemeManager initialized successfully")
+    else
+        print("|cffff8800ParallelLoot Warning:|r ThemeManager not found, theme system unavailable")
+    end
+end
+
+-- Create test widgets for theme validation - Task 1.4 Implementation
+function ParallelLoot:CreateThemeTestWidgets()
+    if not self.ThemeManager then
+        print("|cffff0000ParallelLoot:|r ThemeManager not available for testing")
+        return false
+    end
+    
+    return self.ThemeManager:CreateTestWidgets()
+end
+
+-- Clean up theme test widgets
+function ParallelLoot:CleanupThemeTestWidgets()
+    if self.ThemeManager and self.ThemeManager.CleanupTestWidgets then
+        self.ThemeManager:CleanupTestWidgets()
+    end
+end
+
 -- Database utility functions
 function ParallelLoot:GetProfileList()
     return self.db:GetProfiles()
@@ -847,6 +884,128 @@ end
 
 function ParallelLoot:CopyProfile(sourceProfile)
     self.db:CopyProfile(sourceProfile)
+end
+
+-- Theme system testing function - Task 1.4 Implementation
+function ParallelLoot:TestThemeSystem()
+    print("|cff00ff00ParallelLoot Theme System Test:|r Testing dark theme system...")
+    
+    -- Test ThemeManager existence and initialization
+    local themeManagerExists = self.ThemeManager and type(self.ThemeManager) == "table"
+    if not themeManagerExists then
+        print("ThemeManager not loaded")
+        return false
+    end
+    
+    -- Test theme system components
+    local componentsOK = self.ThemeManager.Colors and 
+                        self.ThemeManager.Media and
+                        type(self.ThemeManager.Initialize) == "function"
+    print("Theme components: " .. (componentsOK and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+    
+    -- Test LibSharedMedia integration
+    local mediaOK = LibSharedMedia and 
+                   type(self.ThemeManager.RegisterCustomMedia) == "function"
+    print("LibSharedMedia integration: " .. (mediaOK and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+    
+    -- Test theme application functions
+    local functionsOK = type(self.ThemeManager.ApplyFrameTheme) == "function" and
+                       type(self.ThemeManager.ApplyButtonTheme) == "function" and
+                       type(self.ThemeManager.ApplyTextTheme) == "function"
+    print("Theme functions: " .. (functionsOK and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+    
+    -- Test color palette completeness
+    local colorsOK = self.ThemeManager.Colors.Background and
+                    self.ThemeManager.Colors.Text and
+                    self.ThemeManager.Colors.Accent and
+                    self.ThemeManager.Colors.Interactive
+    print("Color palette: " .. (colorsOK and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+    
+    return componentsOK and mediaOK and functionsOK and colorsOK
+end
+
+-- Basic theme system validation - Task 1.4 Implementation
+function ParallelLoot:ValidateThemeSystemBasic()
+    print("|cff888888ParallelLoot:|r Running basic theme system validation...")
+    
+    -- Test color palette structure
+    local colorTests = {
+        "Background.Primary", "Background.Secondary", "Background.Tertiary",
+        "Text.Primary", "Text.Secondary", "Text.Muted",
+        "Accent.Primary", "Accent.Secondary", "Accent.Success",
+        "Border.Default", "Border.Subtle",
+        "Interactive.Button.Normal", "Interactive.Progress.Fill"
+    }
+    
+    local colorsPassed = 0
+    for _, colorPath in ipairs(colorTests) do
+        local parts = {}
+        for part in string.gmatch(colorPath, "[^%.]+") do
+            table.insert(parts, part)
+        end
+        
+        local current = self.ThemeManager.Colors
+        local valid = true
+        for _, part in ipairs(parts) do
+            if current and current[part] then
+                current = current[part]
+            else
+                valid = false
+                break
+            end
+        end
+        
+        if valid and type(current) == "table" and #current >= 3 then
+            colorsPassed = colorsPassed + 1
+        end
+    end
+    
+    print("|cff888888ParallelLoot:|r Color palette validation: " .. colorsPassed .. "/" .. #colorTests .. " colors defined")
+    
+    -- Test media registration
+    local mediaTests = {
+        {type = "font", key = self.ThemeManager.Media.Fonts.Primary},
+        {type = "font", key = self.ThemeManager.Media.Fonts.Secondary},
+        {type = "background", key = self.ThemeManager.Media.Textures.Background}
+    }
+    
+    local mediaPassed = 0
+    for _, media in ipairs(mediaTests) do
+        if LibSharedMedia:IsValid(media.type, media.key) then
+            mediaPassed = mediaPassed + 1
+        end
+    end
+    
+    print("|cff888888ParallelLoot:|r Media registration validation: " .. mediaPassed .. "/" .. #mediaTests .. " media registered")
+    
+    -- Test utility functions
+    local utilityTests = {
+        {name = "GetCategoryColor", func = self.ThemeManager.GetCategoryColor, arg = "bis"},
+        {name = "GetClassColor", func = self.ThemeManager.GetClassColor, arg = "WARRIOR"},
+        {name = "ColorToHex", func = self.ThemeManager.ColorToHex, arg = {1.0, 0.5, 0.0, 1.0}},
+        {name = "CreateColoredText", func = self.ThemeManager.CreateColoredText, arg = "Test"}
+    }
+    
+    local utilityPassed = 0
+    for _, test in ipairs(utilityTests) do
+        if type(test.func) == "function" then
+            local success, result = pcall(test.func, self.ThemeManager, test.arg)
+            if success and result then
+                utilityPassed = utilityPassed + 1
+            end
+        end
+    end
+    
+    print("|cff888888ParallelLoot:|r Utility functions validation: " .. utilityPassed .. "/" .. #utilityTests .. " functions working")
+    
+    local totalTests = #colorTests + #mediaTests + #utilityTests
+    local totalPassed = colorsPassed + mediaPassed + utilityPassed
+    local success = totalPassed >= (totalTests * 0.8) -- 80% pass rate required
+    
+    print("|cff888888ParallelLoot:|r Basic validation result: " .. totalPassed .. "/" .. totalTests .. " (" .. 
+          math.floor((totalPassed/totalTests)*100) .. "%) - " .. (success and "PASS" or "FAIL"))
+    
+    return success
 end
 
 -- Database validation and testing functions
@@ -996,6 +1155,60 @@ function ParallelLoot:ValidateTask(taskId)
         local taskComplete = dbInitialized and dbStructure and profileSystem and 
                            callbacksOK and migrationOK and defaultsOK and profileSwitchOK
         print("Task 1.3 Status: " .. (taskComplete and "|cff00ff00COMPLETE|r" or "|cffff0000INCOMPLETE|r"))
+        
+        return taskComplete
+        
+    elseif taskId == "1.4" then
+        print("|cff00ff00ParallelLoot Task 1.4 Validation:|r")
+        
+        -- Validate ThemeManager exists and is initialized
+        local themeManagerOK = self.ThemeManager and type(self.ThemeManager) == "table"
+        print("ThemeManager loaded: " .. (themeManagerOK and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+        
+        -- Validate dark theme color palette
+        local colorPaletteOK = themeManagerOK and self.ThemeManager.Colors and
+                              self.ThemeManager.Colors.Background and
+                              self.ThemeManager.Colors.Text and
+                              self.ThemeManager.Colors.Accent and
+                              self.ThemeManager.Colors.Border and
+                              self.ThemeManager.Colors.Interactive
+        print("Color palette defined: " .. (colorPaletteOK and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+        
+        -- Validate LibSharedMedia integration
+        local mediaIntegrationOK = themeManagerOK and self.ThemeManager.Media and
+                                  self.ThemeManager.Media.Fonts and
+                                  self.ThemeManager.Media.Textures and
+                                  type(self.ThemeManager.RegisterCustomMedia) == "function"
+        print("LibSharedMedia integration: " .. (mediaIntegrationOK and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+        
+        -- Validate theme application functions
+        local themeFunctionsOK = themeManagerOK and
+                                type(self.ThemeManager.ApplyFrameTheme) == "function" and
+                                type(self.ThemeManager.ApplyButtonTheme) == "function" and
+                                type(self.ThemeManager.ApplyProgressBarTheme) == "function" and
+                                type(self.ThemeManager.ApplyTextTheme) == "function"
+        print("Theme application functions: " .. (themeFunctionsOK and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+        
+        -- Validate modern styling patterns
+        local modernStylingOK = themeManagerOK and
+                               type(self.ThemeManager.ApplyModernStyling) == "function" and
+                               type(self.ThemeManager.SetupButtonHoverEffects) == "function" and
+                               type(self.ThemeManager.GetCategoryColor) == "function"
+        print("Modern styling patterns: " .. (modernStylingOK and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+        
+        -- Run comprehensive theme tests if ThemeManager is available
+        local themeTestsOK = false
+        if themeManagerOK and self.ThemeManager.RunThemeTests then
+            themeTestsOK = self.ThemeManager:RunThemeTests()
+        elseif themeManagerOK then
+            -- Run basic validation if full tests aren't available
+            themeTestsOK = self:ValidateThemeSystemBasic()
+        end
+        print("Theme system tests: " .. (themeTestsOK and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+        
+        local taskComplete = themeManagerOK and colorPaletteOK and mediaIntegrationOK and 
+                           themeFunctionsOK and modernStylingOK and themeTestsOK
+        print("Task 1.4 Status: " .. (taskComplete and "|cff00ff00COMPLETE|r" or "|cffff0000INCOMPLETE|r"))
         
         return taskComplete
     end
