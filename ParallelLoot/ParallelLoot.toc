@@ -57,9 +57,11 @@ ParallelLoot.lua
 
 # Core Modules (loaded after main addon)
 Core\DataModels.lua
+Core\RollRangeManager.lua
 
 # Test Modules (loaded after core modules)
 Tests\DataModelsTests.lua
+Tests\RollRangeManagerTests.lua
 
 # UI Modules (loaded after core modules)
 UI\ThemeManager.lua

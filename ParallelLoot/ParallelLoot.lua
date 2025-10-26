@@ -227,6 +227,17 @@ function ParallelLoot:OnInitialize()
     self.CommManager = {}
     self.DataManager = {}
     
+    -- Initialize RollRangeManager - Task 2.2 Implementation
+    if self.RollRangeManager then
+        local success = self.RollRangeManager:Initialize()
+        if success then
+            -- Integrate with existing data models
+            self.RollRangeManager:IntegrateWithLootSession()
+        else
+            print("|cffff0000ParallelLoot Error:|r Failed to initialize RollRangeManager")
+        end
+    end
+    
     -- ThemeManager will be initialized after all files are loaded
     
     -- Set up communication
@@ -1408,6 +1419,65 @@ function ParallelLoot:ValidateTask(taskId)
         local taskComplete = dataModelsOK and lootSessionOK and lootItemOK and 
                            playerRollOK and utilsOK and modernAPIUsage and unitTestsOK
         print("Task 2.1 Status: " .. (taskComplete and "|cff00ff00COMPLETE|r" or "|cffff0000INCOMPLETE|r"))
+        
+        return taskComplete
+        
+    elseif taskId == "2.2" then
+        print("|cff00ff00ParallelLoot Task 2.2 Validation:|r")
+        
+        -- Validate RollRangeManager exists and is initialized
+        local rangeManagerOK = self.RollRangeManager and type(self.RollRangeManager) == "table"
+        print("RollRangeManager loaded: " .. (rangeManagerOK and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+        
+        -- Validate AceDB persistence structure
+        local persistenceOK = rangeManagerOK and self.db and self.db.global and 
+                             self.db.global.rollRangeManager and self.db.profile.rollRanges
+        print("AceDB persistence: " .. (persistenceOK and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+        
+        -- Validate range assignment algorithm
+        local algorithmOK = rangeManagerOK and 
+                           type(self.RollRangeManager.GetNextRollRange) == "function" and
+                           type(self.RollRangeManager.CreateRollRange) == "function"
+        print("Range assignment algorithm: " .. (algorithmOK and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+        
+        -- Validate range recycling system
+        local recyclingOK = rangeManagerOK and 
+                           type(self.RollRangeManager.FreeRollRange) == "function" and
+                           type(self.RollRangeManager.GetAvailableRanges) == "function"
+        print("Range recycling system: " .. (recyclingOK and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+        
+        -- Validate conflict detection
+        local conflictDetectionOK = rangeManagerOK and 
+                                   type(self.RollRangeManager.DetectRangeConflicts) == "function" and
+                                   type(self.RollRangeManager.CheckRangeOverlap) == "function"
+        print("Conflict detection: " .. (conflictDetectionOK and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+        
+        -- Validate LootSession integration
+        local integrationOK = rangeManagerOK and 
+                             type(self.RollRangeManager.IntegrateWithLootSession) == "function"
+        print("LootSession integration: " .. (integrationOK and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+        
+        -- Run comprehensive unit tests if available
+        local unitTestsOK = false
+        if self.RollRangeManagerTests and type(self.RollRangeManagerTests.RunAllTests) == "function" then
+            print("Running comprehensive unit tests...")
+            unitTestsOK = self.RollRangeManagerTests:RunAllTests()
+        else
+            print("Unit tests not available")
+        end
+        print("Unit tests: " .. (unitTestsOK and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+        
+        -- Run built-in range assignment test
+        local rangeTestOK = false
+        if rangeManagerOK and type(self.RollRangeManager.TestRangeAssignment) == "function" then
+            rangeTestOK = self.RollRangeManager:TestRangeAssignment()
+        end
+        print("Range assignment test: " .. (rangeTestOK and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+        
+        local taskComplete = rangeManagerOK and persistenceOK and algorithmOK and 
+                           recyclingOK and conflictDetectionOK and integrationOK and 
+                           unitTestsOK and rangeTestOK
+        print("Task 2.2 Status: " .. (taskComplete and "|cff00ff00COMPLETE|r" or "|cffff0000INCOMPLETE|r"))
         
         return taskComplete
     end
