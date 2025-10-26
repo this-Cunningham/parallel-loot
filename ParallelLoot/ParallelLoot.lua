@@ -1060,6 +1060,153 @@ function ParallelLoot:ValidatePersistence()
     return profileOK and charOK and globalOK
 end
 
+-- Create test session for in-game validation - Task 2.1 Implementation
+function ParallelLoot:CreateTestSession()
+    print("|cff00ff00ParallelLoot Test Session:|r Creating test loot session with sample data...")
+    
+    if not self.DataModels then
+        print("|cffff0000Error:|r DataModels module not loaded")
+        return false
+    end
+    
+    -- Create test session
+    local session = self.DataModels.LootSession:New("TestMaster")
+    if not session then
+        print("|cffff0000Error:|r Failed to create test session")
+        return false
+    end
+    
+    print("Created session: " .. session.id .. " (Master: " .. session.masterId .. ")")
+    
+    -- Create test item with MoP raid item
+    local itemLink = "|cffa335ee|Hitem:71617:0:0:0:0:0:0:0:85:0:0|h[Zin'rokh, Destroyer of Worlds]|h|r"
+    local rollRange = session:GetNextRollRange()
+    local item = self.DataModels.LootItem:New(itemLink, rollRange, 71617)
+    
+    if not item then
+        print("|cffff0000Error:|r Failed to create test item")
+        return false
+    end
+    
+    print("Created item: " .. item.id .. " (Roll range: " .. rollRange.baseRange .. "-" .. (rollRange.baseRange + 99) .. ")")
+    
+    -- Add item to session
+    local success = session:AddItem(item)
+    if not success then
+        print("|cffff0000Error:|r Failed to add item to session")
+        return false
+    end
+    
+    -- Create test rolls
+    local testRolls = {
+        {player = "Thorgrim", category = "bis", value = 95},
+        {player = "Elaria", category = "ms", value = 88},
+        {player = "Kazrak", category = "os", value = 76},
+        {player = "Drakken", category = "coz", value = 42}
+    }
+    
+    for _, rollData in ipairs(testRolls) do
+        local roll = self.DataModels.PlayerRoll:New(rollData.player, rollData.category, rollData.value, item.id)
+        if roll then
+            local rollSuccess = item:AddRoll(roll)
+            if rollSuccess then
+                print("Added roll: " .. rollData.player .. " rolled " .. rollData.value .. " for " .. rollData.category)
+            else
+                print("|cffff8800Warning:|r Failed to add roll for " .. rollData.player)
+            end
+        else
+            print("|cffff8800Warning:|r Failed to create roll for " .. rollData.player)
+        end
+    end
+    
+    -- Validate session integrity
+    local valid, errors = self.DataModels.Utils.ValidateSessionIntegrity(session)
+    if not valid then
+        print("|cffff0000Error:|r Session integrity validation failed:")
+        for _, error in ipairs(errors) do
+            print("  " .. error)
+        end
+        return false
+    end
+    
+    -- Store test session for inspection
+    self._testSession = session
+    
+    -- Display session statistics
+    local stats = session:GetStatistics()
+    print("|cff00ff00Test Session Statistics:|r")
+    print("  Session ID: " .. stats.sessionId)
+    print("  Master: " .. stats.masterId)
+    print("  Active Items: " .. stats.activeItemCount)
+    print("  Total Rolls: " .. item.rollStats.totalRolls)
+    print("  Highest Roll: " .. item.rollStats.highestRoll.value .. " by " .. (item.rollStats.highestRoll.player or "Unknown"))
+    
+    -- Display sorted rolls
+    local sortedRolls = item:GetSortedRolls()
+    print("|cff00ff00Roll Results:|r")
+    for category, rolls in pairs(sortedRolls) do
+        if #rolls > 0 then
+            print("  " .. string.upper(category) .. ":")
+            for _, roll in ipairs(rolls) do
+                print("    " .. roll.playerName .. ": " .. roll.rollValue)
+            end
+        end
+    end
+    
+    print("|cff00ff00Test Session Created Successfully!|r")
+    print("Use |cff888888/script ParallelLoot:InspectTestSession()|r to inspect the session data")
+    print("Use |cff888888/dump ParallelLoot._testSession|r to view raw session data")
+    
+    return true
+end
+
+-- Inspect test session data
+function ParallelLoot:InspectTestSession()
+    if not self._testSession then
+        print("|cffff0000Error:|r No test session available. Run /script ParallelLoot:CreateTestSession() first")
+        return
+    end
+    
+    local session = self._testSession
+    print("|cff00ff00Test Session Inspection:|r")
+    
+    -- Validate session structure
+    local valid, error = session:Validate()
+    print("Session Valid: " .. (valid and "|cff00ff00YES|r" or "|cffff0000NO|r - " .. (error or "unknown error")))
+    
+    -- Display session details
+    print("Session ID: " .. session.id)
+    print("Master: " .. session.masterId)
+    print("Status: " .. session.status)
+    print("Start Time: " .. date("%Y-%m-%d %H:%M:%S", session.startTime))
+    print("Active Items: " .. #session.activeItems)
+    print("Awarded Items: " .. #session.awardedItems)
+    
+    -- Display roll range management
+    print("Next Base Range: " .. session.rollRanges.nextBaseRange)
+    print("Used Ranges: " .. #session.rollRanges.usedRanges)
+    print("Available Ranges: " .. #session.rollRanges.availableRanges)
+    
+    -- Display items and rolls
+    for i, item in ipairs(session.activeItems) do
+        print("Item " .. i .. ": " .. (item.itemInfo.name or "Unknown Item"))
+        print("  Item ID: " .. item.id)
+        print("  WoW Item ID: " .. item.itemId)
+        print("  Roll Range: " .. item.rollRange.baseRange .. "-" .. (item.rollRange.baseRange + 99))
+        print("  Total Rolls: " .. #item.rolls)
+        print("  Status: " .. item.status)
+        
+        if #item.rolls > 0 then
+            print("  Rolls:")
+            for _, roll in ipairs(item.rolls) do
+                print("    " .. roll.playerName .. " (" .. roll.category .. "): " .. roll.rollValue)
+            end
+        end
+    end
+    
+    return session
+end
+
 -- Validation function for specific tasks
 function ParallelLoot:ValidateTask(taskId)
     if taskId == "1.1" then
@@ -1209,6 +1356,58 @@ function ParallelLoot:ValidateTask(taskId)
         local taskComplete = themeManagerOK and colorPaletteOK and mediaIntegrationOK and 
                            themeFunctionsOK and modernStylingOK and themeTestsOK
         print("Task 1.4 Status: " .. (taskComplete and "|cff00ff00COMPLETE|r" or "|cffff0000INCOMPLETE|r"))
+        
+        return taskComplete
+        
+    elseif taskId == "2.1" then
+        print("|cff00ff00ParallelLoot Task 2.1 Validation:|r")
+        
+        -- Validate DataModels module exists and is loaded
+        local dataModelsOK = self.DataModels and type(self.DataModels) == "table"
+        print("DataModels module loaded: " .. (dataModelsOK and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+        
+        -- Validate LootSession data structure
+        local lootSessionOK = dataModelsOK and self.DataModels.LootSession and
+                             type(self.DataModels.LootSession.New) == "function" and
+                             type(self.DataModels.LootSession.Validate) == "function"
+        print("LootSession structure: " .. (lootSessionOK and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+        
+        -- Validate LootItem data structure
+        local lootItemOK = dataModelsOK and self.DataModels.LootItem and
+                          type(self.DataModels.LootItem.New) == "function" and
+                          type(self.DataModels.LootItem.Validate) == "function"
+        print("LootItem structure: " .. (lootItemOK and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+        
+        -- Validate PlayerRoll data structure
+        local playerRollOK = dataModelsOK and self.DataModels.PlayerRoll and
+                            type(self.DataModels.PlayerRoll.New) == "function" and
+                            type(self.DataModels.PlayerRoll.Validate) == "function"
+        print("PlayerRoll structure: " .. (playerRollOK and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+        
+        -- Validate utility functions
+        local utilsOK = dataModelsOK and self.DataModels.Utils and
+                       type(self.DataModels.Utils.FindItemById) == "function" and
+                       type(self.DataModels.Utils.ValidateSessionIntegrity) == "function"
+        print("Utility functions: " .. (utilsOK and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+        
+        -- Validate modern WoW API usage
+        local modernAPIUsage = C_Item and type(C_Item.GetItemInfo) == "function" and
+                              type(C_Item.DoesItemExistByID) == "function"
+        print("Modern WoW API usage: " .. (modernAPIUsage and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+        
+        -- Run comprehensive unit tests if available
+        local unitTestsOK = false
+        if self.DataModelsTests and type(self.DataModelsTests.RunAllTests) == "function" then
+            print("Running comprehensive unit tests...")
+            unitTestsOK = self.DataModelsTests:RunAllTests()
+        else
+            print("Unit tests not available")
+        end
+        print("Unit tests: " .. (unitTestsOK and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+        
+        local taskComplete = dataModelsOK and lootSessionOK and lootItemOK and 
+                           playerRollOK and utilsOK and modernAPIUsage and unitTestsOK
+        print("Task 2.1 Status: " .. (taskComplete and "|cff00ff00COMPLETE|r" or "|cffff0000INCOMPLETE|r"))
         
         return taskComplete
     end
